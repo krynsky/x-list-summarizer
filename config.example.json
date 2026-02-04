@@ -1,0 +1,37 @@
+{
+    "summarization": {
+        "provider": "ollama",
+        "options": {
+            "ollama": {
+                "model": "qwen2.5:7b",
+                "endpoint": "http://localhost:11434"
+            },
+            "lmstudio": {
+                "model": "local-model",
+                "endpoint": "http://localhost:1234/v1"
+            },
+            "groq": {
+                "model": "llama-3.3-70b-versatile",
+                "endpoint": "https://api.groq.com/openai/v1",
+                "api_key": ""
+            },
+            "claude": {
+                "model": "claude-3-5-sonnet-20240620",
+                "api_key": ""
+            },
+            "openai": {
+                "model": "gpt-4o",
+                "api_key": ""
+            }
+        }
+    },
+    "twitter": {
+        "list_urls": [
+            "https://x.com/i/lists/YOUR_LIST_ID_HERE"
+        ],
+        "max_tweets": 100,
+        "list_owner": null,
+        "max_scrolls": 5,
+        "headless_after_auth": true
+    }
+}
