@@ -553,7 +553,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 
     <div id="home" class="container tab-content active">
         <div style="text-align:center; margin: 60px 0 80px;">
-            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.0</span></h1>
+            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.1.0</span></h1>
             <p style="font-size: 18px; color: var(--text-dim); line-height: 1.6; max-width: 650px; margin: 0 auto;">Turn the noise of X into actionable intelligence. This premium tool analyzes curated lists to extract high-signal trends and media.</p>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
