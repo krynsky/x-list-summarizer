@@ -5,7 +5,7 @@
 A Pinokio application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
 
 <p align="center">
-  <img src="screenshots/dashboard.png" width="48%" />
+  <img src="screenshots/dashboard.png" width="48%" /><br>
   <img src="screenshots/report.png" width="48%" />
 </p>
 
