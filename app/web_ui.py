@@ -469,10 +469,50 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         .h-img { width: 44px; height: 44px; border-radius: 50%; border: 1px solid var(--border); margin-right: 15px; flex-shrink: 0; }
         .report-info-con { display: flex; align-items: center; flex: 1; }
 
-        /* Tab Content */
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease-out; }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Modal Styles */
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.9);
+            backdrop-filter: blur(10px);
+            cursor: zoom-out;
+            align-items: center; justify-content: center;
+        }
+        .modal-content {
+            margin: auto;
+            display: block;
+            max-width: 90%;
+            max-height: 90%;
+            border-radius: 12px;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            cursor: default;
+        }
+        .close-modal {
+            position: absolute;
+            top: 30px;
+            right: 50px;
+            color: #fff;
+            font-size: 40px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+        .enlarge-hint {
+            font-size: 11px;
+            color: var(--accent);
+            text-align: center;
+            margin-top: 8px;
+            font-weight: 700;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -604,7 +644,8 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                             <li>Under <strong>Cookies</strong>, select <strong>https://x.com</strong></li>
                             <li>Copy values for <strong>auth_token</strong> and <strong>ct0</strong></li>
                         </ul>
-                        <img src="screenshots/auth_guide.png" style="width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid var(--border);">
+                        <img src="screenshots/auth_guide.png" onclick="openModal(this.src)" style="width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid var(--border); cursor: zoom-in;">
+                        <div class="enlarge-hint" onclick="openModal('screenshots/auth_guide.png')">🔍 Click to enlarge image</div>
                     </div>
 
                     <button class="run-btn btn-full" onclick="saveCookies()">
@@ -794,6 +835,17 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 }
             } catch(e) { console.error('Poll error:', e); }
         }
+ 
+        function openModal(src) {
+            const modal = document.getElementById('imageModal');
+            const modalImg = document.getElementById('modalImg');
+            modal.style.display = "flex";
+            modalImg.src = src;
+        }
+
+        function closeModal() {
+            document.getElementById('imageModal').style.display = "none";
+        }
 
         async function viewLatest() {
             const r = await fetch('/api/status');
@@ -961,6 +1013,12 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         loadConfig();
         setInterval(poll, 1500);
     </script>
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="modal" onclick="closeModal()">
+        <span class="close-modal" onclick="closeModal()">&times;</span>
+        <img class="modal-content" id="modalImg" onclick="event.stopPropagation()">
+    </div>
 </body>
 </html>'''
 
