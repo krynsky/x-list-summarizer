@@ -5,8 +5,8 @@
 A Pinokio application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
 
 <p align="center">
-  <img src="screenshots/dashboard.png" width="48%" />
-  <img src="screenshots/report.png" width="48%" />
+  <img src="screenshots/dashboard.png" width="100%" />
+  <img src="screenshots/report.png" width="100%" />
 </p>
 
 ## ✨ Features
@@ -41,7 +41,16 @@ Click **Open Dashboard** in Pinokio. This launches the unified web interface.
 
 ### 2. Configure Settings
 Go to the **Settings** tab in the dashboard:
-- **X Authentication**: Paste your `auth_token` and `ct0` cookies (instructions provided in UI).
+- **X Authentication**: Paste your `auth_token` and `ct0` cookies.
+    > **How to find these?**
+    > 1. Open [x.com](https://x.com) in your browser (Chrome/Edge/Brave).
+    > 2. Press **F12** to open Developer Tools.
+    > 3. Go to the **Application** tab. (Or **Storage** in Firefox)
+    > 4. Expand **Cookies** on the left and select `https://x.com`.
+    > 5. Find `auth_token` and `ct0` in the list and copy their values.
+    >
+    > ![Authentication Guide](screenshots/auth_guide.png)
+
 - **AI Intelligence**: Select your provider and configure the model/API key.
     - *Groq is recommended for free, high-speed cloud inference.*
 - **Twitter Lists**: Add the URLs of the lists you want to summarize.

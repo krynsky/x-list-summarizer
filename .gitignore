@@ -1,0 +1,42 @@
+# System & IDE
+ENVIRONMENT
+node_modules/
+venv/
+.env
+.clinerules
+.cursorrules
+.windsurfrules
+.gemini/
+.geminiignore
+.gitattributes
+
+# Project Junk
+/logs/
+/cache/
+/AGENTS.md
+/CLAUDE.md
+/GEMINI.md
+/QWEN.md
+/SPEC.md
+/debug_list.html
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Browser session data (contains cookies)
+browser_session/
+cookies.json
+
+# Configuration (contains secrets)
+config.json
+
+# Generated reports
+output/
+
+# Logs
+*.log
+
+# Debug files
+debug_*
