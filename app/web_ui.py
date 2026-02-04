@@ -566,6 +566,8 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                         <option value="openai">OpenAI GPT-4o</option>
                     </select>
 
+                    <div id="ai_help" class="tip-box" style="margin-top: -10px; margin-bottom: 25px; display: none;"></div>
+
                     <label>Model Name</label>
                     <input type="text" id="p_mod" placeholder="openai/gpt-oss-120b">
 
@@ -599,6 +601,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                             <li>Under <strong>Cookies</strong>, select <strong>https://x.com</strong></li>
                             <li>Copy values for <strong>auth_token</strong> and <strong>ct0</strong></li>
                         </ul>
+                        <img src="screenshots/auth_guide.png" style="width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid var(--border);">
                     </div>
 
                     <button class="run-btn btn-full" onclick="saveCookies()">
@@ -818,6 +821,22 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             const data = cfg.summarization.options[p] || {};
             if(document.getElementById('p_mod')) document.getElementById('p_mod').value = data.model || '';
             if(document.getElementById('p_key')) document.getElementById('p_key').value = data.api_key || '';
+
+            const helpEl = document.getElementById('ai_help');
+            const helpTexts = {
+                'groq': '<strong>Setup Groq (Free Cloud):</strong><br>1. Get an API key from the <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a>.<br>2. Recommended model: <code>llama-3.3-70b-versatile</code>',
+                'ollama': '<strong>Setup Ollama (Local):</strong><br>1. Ensure <a href="https://ollama.com" target="_blank" style="color:var(--accent);">Ollama</a> is running.<br>2. Run <code>ollama pull qwen2.5:7b</code> in your terminal.',
+                'lmstudio': '<strong>Setup LM Studio (Local):</strong><br>1. Start the <strong>Local Server</strong> in LM Studio.<br>2. Your default endpoint is <code>http://localhost:1234/v1</code>',
+                'claude': '<strong>Setup Claude:</strong><br>1. Get an API key from the <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">Anthropic Console</a>.<br>2. Recommended: <code>claude-3-5-sonnet-20240620</code>',
+                'openai': '<strong>Setup OpenAI:</strong><br>1. Get an API key from the <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">OpenAI Platform</a>.<br>2. Recommended: <code>gpt-4o</code>'
+            };
+            
+            if (helpTexts[p]) {
+                helpEl.innerHTML = '<div class="tip-title">Provider Guide:</div><div style="font-size:12px; line-height:1.6; color:var(--text-dim);">' + helpTexts[p] + '</div>';
+                helpEl.style.display = 'block';
+            } else {
+                helpEl.style.display = 'none';
+            }
         }
 
         async function saveConfig() {
