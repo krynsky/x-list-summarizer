@@ -569,10 +569,13 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                     <div id="ai_help" class="tip-box" style="margin-top: -10px; margin-bottom: 25px; display: none;"></div>
 
                     <label>Model Name</label>
-                    <input type="text" id="p_mod" placeholder="openai/gpt-oss-120b">
+                    <select id="p_mod_select" onchange="toggleCustomModel()"></select>
+                    <input type="text" id="p_mod_custom" placeholder="Enter custom model name..." style="display:none; margin-top: -10px;">
 
-                    <label>API Key</label>
-                    <input type="password" id="p_key" placeholder="••••••••••••••••••••••••••••••••••••••••••••••••">
+                    <div id="p_key_con">
+                        <label>API Key</label>
+                        <input type="password" id="p_key" placeholder="••••••••••••••••••••••••••••••••••••••••••••••••">
+                    </div>
 
                     <button class="run-btn btn-full btn-save" onclick="saveConfig()">
                         <span>💾</span> Save App Configuration
@@ -816,17 +819,58 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             renderProviderOptions();
         }
 
+        function toggleCustomModel() {
+            const sel = document.getElementById('p_mod_select');
+            const custom = document.getElementById('p_mod_custom');
+            if (sel.value === 'custom') {
+                custom.style.display = 'block';
+            } else {
+                custom.style.display = 'none';
+            }
+        }
+
         function renderProviderOptions() {
             const p = document.getElementById('s_prov').value;
             const data = cfg.summarization.options[p] || {};
-            if(document.getElementById('p_mod')) document.getElementById('p_mod').value = data.model || '';
+            const sel = document.getElementById('p_mod_select');
+            const custom = document.getElementById('p_mod_custom');
+            
+            const presets = {
+                'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
+                'claude': ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'],
+                'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+                'ollama': ['qwen2.5:7b', 'llama3.1', 'mistral', 'phi3'],
+                'lmstudio': ['local-model']
+            };
+
+            const models = presets[p] || [];
+            sel.innerHTML = models.map(m => `<option value="${m}">${m}</option>`).join('') + '<option value="custom">Custom...</option>';
+            
+            if (models.includes(data.model)) {
+                sel.value = data.model;
+                custom.style.display = 'none';
+            } else if (data.model) {
+                sel.value = 'custom';
+                custom.value = data.model;
+                custom.style.display = 'block';
+            } else {
+                sel.value = models[0] || 'custom';
+                toggleCustomModel();
+            }
+
             if(document.getElementById('p_key')) document.getElementById('p_key').value = data.api_key || '';
+            const keyCon = document.getElementById('p_key_con');
+            if (p === 'ollama' || p === 'lmstudio') {
+                keyCon.style.display = 'none';
+            } else {
+                keyCon.style.display = 'block';
+            }
 
             const helpEl = document.getElementById('ai_help');
             const helpTexts = {
                 'groq': '<strong>Setup Groq (Free Cloud):</strong><br>1. Get an API key from the <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a>.<br>2. Recommended model: <code>llama-3.3-70b-versatile</code>',
                 'ollama': '<strong>Setup Ollama (Local):</strong><br>1. Ensure <a href="https://ollama.com" target="_blank" style="color:var(--accent);">Ollama</a> is running.<br>2. Run <code>ollama pull qwen2.5:7b</code> in your terminal.',
-                'lmstudio': '<strong>Setup LM Studio (Local):</strong><br>1. Start the <strong>Local Server</strong> in LM Studio.<br>2. Your default endpoint is <code>http://localhost:1234/v1</code>',
+                'lmstudio': '<strong>Setup LM Studio (Local):</strong><br>1. Download <a href="https://lmstudio.ai/" target="_blank" style="color:var(--accent);">LM Studio</a>.<br>2. Load a model (e.g., <code>Qwen 2.5 7B</code>) and click <strong>Start Server</strong>.<br>3. Default endpoint: <code>http://localhost:1234/v1</code>',
                 'claude': '<strong>Setup Claude:</strong><br>1. Get an API key from the <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">Anthropic Console</a>.<br>2. Recommended: <code>claude-3-5-sonnet-20240620</code>',
                 'openai': '<strong>Setup OpenAI:</strong><br>1. Get an API key from the <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">OpenAI Platform</a>.<br>2. Recommended: <code>gpt-4o</code>'
             };
@@ -846,7 +890,11 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             newCfg.twitter.list_urls = document.getElementById('s_urls').value.split('\\n').filter(x => x.trim());
             newCfg.twitter.max_tweets = parseInt(document.getElementById('s_max').value);
             newCfg.twitter.list_owner = document.getElementById('s_owner').value || null;
-            newCfg.summarization.options[p].model = document.getElementById('p_mod').value;
+            
+            const sel = document.getElementById('p_mod_select');
+            const custom = document.getElementById('p_mod_custom');
+            newCfg.summarization.options[p].model = (sel.value === 'custom') ? custom.value : sel.value;
+            
             newCfg.summarization.options[p].api_key = document.getElementById('p_key').value;
             await fetch('/api/save-config', { method: 'POST', body: JSON.stringify(newCfg) });
             alert('Settings Saved');
