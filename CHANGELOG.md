@@ -2,6 +2,24 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.5.0] - 2026-02-05
+
+### Added
+- **Interactive Profiler**: A powerful new feature to analyze account list memberships.
+    - **Dynamic Word Cloud**: Visualizes key themes and interests of an account based on the lists they belong to.
+    - **Full Table Interactivity**: Clicking any word in the cloud now zooms into a detailed table of source lists with direct links to X.
+- **Account Protection Safegaurds**: Robust security measures to protect users' X accounts.
+    - **User ID Caching**: Implemented local storage for resolved IDs to stay well within strict API limits.
+    - **Human-Like Staggering**: Added randomized delays and staggered parallel executions to avoid bot detection.
+    - **Rate Limit UI Awareness**: The dashboard now specifically detects and explains X Rate Limit (429) errors.
+
+### Performance
+- **Turbocharged Installation**: Upgraded the installation and update backends to use `uv` instead of standard `pip`. Dependency resolution and installation are now up to 10x faster.
+
+### Fixed
+- **Profiler Backend Stability**: Implemented a manual v1.1 API fallback to resolve memberships that were previously failing due to library limitations.
+- **Visual Responsiveness**: Improved word cloud scaling and layout for a more premium Feel.
+
 ## [1.1.0] - 2026-02-04
 
 ### Added
