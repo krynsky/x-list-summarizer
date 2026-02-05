@@ -3,7 +3,7 @@ module.exports = {
         {
             method: "shell.run",
             params: {
-                message: "git pull"
+                message: "git fetch origin && git merge origin/main --no-edit"
             }
         },
         {
