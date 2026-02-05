@@ -12,7 +12,8 @@ A Pinokio application that fetches tweets from X/Twitter lists (both public and 
 ## ✨ Features
 
 - **🚀 Unified Dashboard**: A premium, dark-mode web interface to manage everything.
-- **📋 Public & Private Lists**: Access both public and private X lists.
+- **� Account Profiler**: Analyze account personas using interactive word clouds and detailed list membership drill-downs.
+- **�📋 Public & Private Lists**: Access both public and private X lists.
 - **🔐 Persistent Sessions**: Log in once via browser cookies, verified automatically.
 - **🧬 Native Link Previews**: X-style cards (Title, Image, Description) rendered directly in the report for external links.
 - **📦 Multi-LLM Support**:
@@ -23,7 +24,9 @@ A Pinokio application that fetches tweets from X/Twitter lists (both public and 
 - **🔗 Smart Aggregation**: Groups tweets by shared external links to find trending stories.
 - **🎥 Enhanced Media**: Built-in video player with improved playback and deduplication.
 - **🎨 Premium Reports**: Generates responsive, self-contained HTML reports with modern CSS (Inter font, Glassmorphism).
-- **🚦 Robust Health Checks**: End-to-end verification for both X Authentication and AI Provider connectivity.
+- **�️ Account Protection**: Smart User ID caching and randomized request staggering to stay within X rate limits.
+- **🚀 Turbocharged Install**: Powered by `uv` for near-instant package installation and environment setup.
+- **�🚦 Robust Health Checks**: End-to-end verification for both X Authentication and AI Provider connectivity.
 
 ## 📦 Installation
 
@@ -60,7 +63,13 @@ Go to the **Dashboard** tab and click **Run Analysis**.
 - The app will fetch tweets, aggregate links, and generate a summary.
 - Progress is shown in real-time with detailed status updates.
 
-### 4. View Report
+### 4. Profile Accounts
+Go to the **Profiler** tab:
+- Enter a X username to analyze their community-curated persona.
+- Explore the interactive word cloud to see how they are categorized.
+- Click any word to see the exact lists that contributed to that theme.
+
+### 5. View Report
 Once complete, the report opens automatically. You can also view past reports in the **History** tab.
 
 ## 🛡️ Security
