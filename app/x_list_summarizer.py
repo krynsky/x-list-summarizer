@@ -27,6 +27,44 @@ class XListFetcher:
             'profile_image_url': None
         }
         self.list_url = ""
+        self.cache_dir = Path('cache')
+        self.user_cache_path = self.cache_dir / 'user_ids.json'
+        self.user_cache = self._load_user_cache()
+        
+    def _load_user_cache(self):
+        """Load username -> User ID mapping from local cache."""
+        if not self.user_cache_path.exists():
+            return {}
+        try:
+            with open(self.user_cache_path, 'r') as f:
+                return json.load(f)
+        except:
+            return {}
+
+    def _save_user_cache(self):
+        """Save username -> User ID mapping to local cache."""
+        self.cache_dir.mkdir(exist_ok=True)
+        try:
+            with open(self.user_cache_path, 'w') as f:
+                json.dump(self.user_cache, f)
+        except:
+            pass
+
+    async def get_user_id(self, username: str) -> str:
+        """Get User ID for a username, using cache if available to save API requests."""
+        username = username.lower().replace('@', '').strip()
+        if username in self.user_cache:
+            return self.user_cache[username]
+            
+        try:
+            user = await self.client.get_user_by_screen_name(username)
+            self.user_cache[username] = user.id
+            self._save_user_cache()
+            return user.id
+        except Exception as e:
+            if '429' in str(e) or 'rate limit' in str(e).lower():
+                raise Exception("X Rate Limit reached. Please wait 15 minutes before searching new users.")
+            raise e
         
     async def login(self):
         """Load cookies and verify login."""
@@ -40,19 +78,78 @@ class XListFetcher:
         except Exception as e:
             return False, f"Login failed: {e}"
 
-    async def verify_session(self):
-        """Lightweight check to see if current session is still valid."""
+    async def verify_session(self, retries=1):
+        """Lightweight check to see if current session is still valid with retry for transient errors."""
         if not self.cookies_path.exists(): return False, "No cookies"
+        
+        last_err = ""
+        for attempt in range(retries + 1):
+            try:
+                self.client.load_cookies(str(self.cookies_path))
+                # Just fetch own user info
+                user = await self.client.user()
+                return True, f"OK (@{user.screen_name})"
+            except Exception as e:
+                last_err = str(e)
+                # If it's a 401, don't retry, it's definitive
+                if '401' in last_err: break
+                # If it's a rate limit or 404, wait a tiny bit and retry
+                if attempt < retries:
+                    await asyncio.sleep(1)
+                    continue
+        
+        err = last_err
+        if '401' in err: return False, "Expired/Unauthorized (401)"
+        if 'rate limit' in err.lower() or '429' in err: return False, "Rate Limited by X"
+        if '404' in err: return False, "X Service Busy (404)"
+        return False, f"Invalid: {err[:30]}"
+
+    async def get_user_memberships(self, username: str):
+        """Fetch all lists that a specific user is a member of (Profiler feature)."""
         try:
             self.client.load_cookies(str(self.cookies_path))
-            # Just fetch own user info
-            user = await self.client.user()
-            return True, f"OK (@{user.screen_name})"
+            user_id = await self.get_user_id(username)
+            
+            memberships = []
+            cursor = '-1' # v1.1 cursor starts at -1
+            
+            # Fetch memberships (lists the user is in)
+            # twikit 2.3.3 lacks get_user_memberships, so we use manual v1.1 call
+            while True:
+                url = f'https://api.twitter.com/1.1/lists/memberships.json?user_id={user_id}&count=50'
+                if cursor and cursor != '-1':
+                    url += f'&cursor={cursor}'
+                
+                # We MUST pass client._base_headers for authentication
+                # client.get() handles the transaction IDs automatically
+                response, raw_response = await self.client.get(url, headers=self.client._base_headers)
+                
+                if not response or 'lists' not in response:
+                    break
+                
+                for l in response['lists']:
+                    name = l.get('name', '')
+                    if name:
+                        owner = l.get('user', {}).get('screen_name', 'Unknown')
+                        list_id = l.get('id_str', '')
+                        memberships.append({
+                            'name': name,
+                            'owner': owner,
+                            'id': list_id
+                        })
+                
+                cursor = str(response.get('next_cursor_str', '0'))
+                if cursor == '0' or not cursor or len(memberships) > 500: # Safety cap
+                    break
+                    
+            print(f"✅ Found {len(memberships)} memberships for {username}")
+            return memberships
         except Exception as e:
-            err = str(e)
-            if '401' in err: return False, "Expired/Unauthorized (401)"
-            if 'rate limit' in err.lower(): return False, "Rate Limited by X"
-            return False, f"Invalid: {err[:30]}"
+            print(f"❌ Error fetching memberships for {username}: {e}")
+            return []
+        except Exception as e:
+            print(f"❌ Error fetching memberships for {username}: {e}")
+            return []
 
     def extract_list_id(self, url_or_id: str) -> str:
         """Extract numeric list ID from URL."""
@@ -81,8 +178,11 @@ class XListFetcher:
                 pass
         return None
 
-    async def fetch_list_tweets(self, list_url_or_id: str, max_tweets: int = 100):
+    async def fetch_list_tweets(self, list_url_or_id: str, max_tweets: int = 100, delay: float = 0):
         """Fetch tweets from a list (Aggregates metadata)."""
+        if delay > 0:
+            await asyncio.sleep(delay)
+            
         list_id = self.extract_list_id(list_url_or_id)
         print(f"📋 Fetching list {list_id}...")
         

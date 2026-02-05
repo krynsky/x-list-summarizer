@@ -10,7 +10,7 @@ module.exports = {
             method: "shell.run",
             params: {
                 venv: "venv",
-                message: "pip install -r requirements.txt"
+                message: "pip install uv && uv pip install -r requirements.txt"
             }
         },
         {

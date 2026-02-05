@@ -48,16 +48,23 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             
         elif parsed.path == '/api/status':
             now = time.time()
-            cache_limit = 60 # 1 minute
+            limit_ok = 30 # 30 seconds for healthy status
+            limit_err = 5  # Only 5 seconds for error/invalid status
             
             # 1. X Auth Verification (Cached)
-            if not hasattr(DashHandler, '_x_cache') or (now - getattr(DashHandler, '_x_cache_time', 0) > cache_limit):
+            last_x = getattr(DashHandler, '_x_cache', None)
+            last_x_time = getattr(DashHandler, '_x_cache_time', 0)
+            
+            x_aged = (now - last_x_time)
+            x_limit = limit_ok if (last_x and last_x.get('active')) else limit_err
+            
+            if not last_x or x_aged > x_limit:
                 x_status = {'active': False, 'message': 'Not logged in'}
                 if COOKIES_PATH.exists():
                     try:
                         fetcher = XListFetcher()
                         loop = asyncio.new_event_loop()
-                        success, msg = loop.run_until_complete(fetcher.verify_session())
+                        success, msg = loop.run_until_complete(fetcher.verify_session(retries=2))
                         x_status = {'active': success, 'message': msg}
                         loop.close()
                     except Exception as e: x_status = {'active': False, 'message': 'Auth Error'}
@@ -66,13 +73,18 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             else: x_status = DashHandler._x_cache
             
             # 2. AI Verification (Cached)
-            if not hasattr(DashHandler, '_ai_cache') or (now - getattr(DashHandler, '_ai_cache_time', 0) > cache_limit):
+            last_ai = getattr(DashHandler, '_ai_cache', None)
+            last_ai_time = getattr(DashHandler, '_ai_cache_time', 0)
+            
+            ai_aged = (now - last_ai_time)
+            ai_limit = limit_ok if (last_ai and last_ai.get('active')) else limit_err
+
+            if not last_ai or ai_aged > ai_limit:
                 ai_status = {'active': False, 'message': 'Checking...'}
                 try:
                     config = self.load_config()
                     provider = LLMProvider(config)
                     ai_status = provider.verify()
-                    # Keep the detailed message from verify() if it's active
                     DashHandler._ai_cache = ai_status
                     DashHandler._ai_cache_time = now
                 except: ai_status = {'active': False, 'message': 'Error'}
@@ -140,7 +152,6 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 import subprocess
                 out_abs = str(OUTPUT_DIR.absolute())
                 if sys.platform == 'win32':
-                    # Use explorer.exe directly to ensure it pops to front
                     subprocess.run(['explorer', out_abs])
                 else:
                     cmd = ['open', out_abs] if sys.platform == 'darwin' else ['xdg-open', out_abs]
@@ -154,30 +165,79 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             self.app_state['status_msg'] = 'Ready'
             self.app_state['last_report'] = None
             self.send_json({'success': True})
-
+            
         else:
             super().do_GET()
 
+    def _analyze_word_frequencies(self, memberships):
+        import re
+        from collections import Counter
+        
+        stop_words = {
+            'the', 'and', 'for', 'with', 'your', 'from', 'this', 'that', 'list', 'lists', 'member',
+            'of', 'to', 'in', 'on', 'at', 'by', 'an', 'is', 'are', 'was', 'were', 'be', 'been', 'being',
+            'have', 'has', 'had', 'do', 'does', 'did', 'but', 'if', 'or', 'because', 'as', 'until', 'while',
+            'about', 'into', 'through', 'during', 'before', 'after', 'above', 'below', 'up', 'down', 'out',
+            'off', 'over', 'under', 'again', 'further', 'then', 'once', 'here', 'there', 'when', 'where',
+            'why', 'how', 'all', 'any', 'both', 'each', 'few', 'more', 'most', 'other', 'some', 'such',
+            'no', 'nor', 'not', 'only', 'own', 'same', 'so', 'than', 'too', 'very', 's', 't', 'can', 'will',
+            'just', 'should', 'now', 'my', 'me', 'our', 'i', 'a', 'it', 'its'
+        }
+        
+        words = []
+        for l in memberships:
+            name = l.get('name', '')
+            cleaned = re.sub(r'[^a-zA-Z0-9\s]', ' ', name.lower())
+            tokens = cleaned.split()
+            for t in tokens:
+                if len(t) > 2 and t not in stop_words:
+                    words.append(t)
+        return dict(Counter(words).most_common(100))
+
     def do_POST(self):
         parsed = urlparse(self.path)
+        
+        if parsed.path == '/api/profile':
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            params = json.loads(post_data)
+            username = params.get('username', '').strip().replace('@', '')
+            
+            if not username:
+                self.send_json({'success': False, 'error': 'Username required'})
+                return
+            
+            try:
+                fetcher = XListFetcher()
+                # Run async membership fetching in a synchronous context
+                memberships = asyncio.run(fetcher.get_user_memberships(username))
+                word_counts = self._analyze_word_frequencies(memberships)
+                
+                self.send_json({
+                    'success': True,
+                    'username': username,
+                    'list_count': len(memberships),
+                    'word_counts': word_counts,
+                    'memberships': memberships
+                })
+            except Exception as e:
+                self.send_json({'success': False, 'error': str(e)})
+            return
+            
         length = int(self.headers.get('Content-Length', 0))
-        data = json.loads(self.rfile.read(length).decode())
+        data = {}
+        if length > 0:
+            data = json.loads(self.rfile.read(length).decode())
         
         if parsed.path == '/api/save-config':
             self.save_config(data)
-            # Invalidate AI cache to force immediate re-verification
-            if hasattr(DashHandler, '_ai_cache_time'):
-                DashHandler._ai_cache_time = 0
+            if hasattr(DashHandler, '_ai_cache_time'): DashHandler._ai_cache_time = 0
             self.send_json({'success': True})
-
         elif parsed.path == '/api/save-cookies':
             COOKIES_PATH.parent.mkdir(exist_ok=True)
             with open(COOKIES_PATH, 'w') as f: json.dump(data, f)
-            # Invalidate X cache to force immediate re-verification
-            if hasattr(DashHandler, '_x_cache_time'):
-                DashHandler._x_cache_time = 0
+            if hasattr(DashHandler, '_x_cache_time'): DashHandler._x_cache_time = 0
             self.send_json({'success': True})
-
         elif parsed.path == '/api/run':
             if not self.app_state.get('running'):
                 self.app_state.update({'running': True, 'progress': 0, 'status_msg': 'Starting...', 'error': None, 'last_report': None})
@@ -185,6 +245,8 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 self.send_json({'success': True})
             else:
                 self.send_json({'success': False, 'error': 'Already running'})
+        else:
+            self.send_error(404)
 
     def load_config(self):
         if CONFIG_PATH.exists():
@@ -242,10 +304,17 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             async def fetch_and_update(url, i):
                 return await fetcher.fetch_list_tweets(url, max_t)
 
-            self.app_state['status_msg'] = f"Fetching {len(urls)} lists in parallel..."
-            print(f"📥 [Performance] fetching {len(urls)} lists...")
+            self.app_state['status_msg'] = f"Fetching {len(urls)} lists (staggered)..."
+            print(f"📥 [Performance] fetching {len(urls)} lists with randomization...")
             t1 = time.time()
-            tasks = [fetch_and_update(url, i) for i, url in enumerate(urls)]
+            
+            import random
+            tasks = []
+            for i, url in enumerate(urls):
+                # Stagger the start of each fetch by 0.3s to 1.2s
+                delay = i * (0.3 + random.random() * 0.5)
+                tasks.append(fetcher.fetch_list_tweets(url, max_t, delay=delay))
+                
             results = await asyncio.gather(*tasks)
             for r in results: all_tweets.extend(r)
             print(f"📥 [Performance] fetching took {time.time()-t1:.2f}s ({len(all_tweets)} tweets total)")
@@ -284,13 +353,22 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             self.save_history_metadata(fname, meta)
 
             self.app_state.update({
-                'progress': 100, 
-                'status_msg': 'Complete!', 
+                'progress': 100,
+                'status_msg': 'Complete!',
                 'last_report': fname
             })
             print(f"✅ [Performance] total run time: {time.time()-start_time:.2f}s")
         except Exception as e:
             err_msg = str(e)
+            if 'rate limit' in err_msg.lower() or '429' in err_msg:
+                err_msg = "X Rate Limit Reached. Please wait 15 minutes before trying again."
+
+            print(f"❌ [Critical Error] {err_msg}")
+            self.app_state.update({
+                'status_msg': 'Error',
+                'progress': 0,
+                'error': err_msg
+            })
             print(f"❌ [Error] Task failed: {err_msg}")
             self.app_state.update({'error': err_msg, 'status_msg': 'Error', 'running': False})
         finally:
@@ -471,7 +549,53 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 
         .tab-content { display: none; }
         .tab-content.active { display: block; animation: fadeIn 0.3s ease-out; }
+        
+        /* Profiler Word Cloud Styles */
+        .cloud-word {
+            transition: 0.3s;
+            cursor: pointer;
+            padding: 8px 15px;
+            border-radius: 12px;
+            display: inline-block;
+            font-weight: 700;
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.05);
+            user-select: none;
+        }
+        .cloud-word:hover {
+            transform: scale(1.15) rotate(2deg);
+            background: rgba(29, 155, 240, 0.15);
+            border-color: var(--accent);
+            color: #fff !important;
+            z-index: 10;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        }
+        .cloud-word.active {
+            background: var(--accent);
+            color: #fff !important;
+            border-color: var(--accent);
+            box-shadow: 0 0 20px rgba(29, 155, 240, 0.4);
+        }
+
+        .prof-detail-card {
+            background: rgba(0,0,0,0.3);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            overflow: hidden;
+            margin-top: 25px;
+            animation: fadeIn 0.4s ease-out;
+        }
+        .prof-table { width: 100%; border-collapse: collapse; }
+        .prof-table th { background: rgba(255,255,255,0.03); padding: 15px; text-align: left; font-size: 11px; text-transform: uppercase; color: var(--text-dim); }
+        .prof-table td { padding: 15px; border-top: 1px solid var(--border); font-size: 14px; }
+        .prof-table tr:hover { background: rgba(255,255,255,0.02); }
+        .word-tag { 
+            background: var(--accent); color: #fff; padding: 4px 12px; border-radius: 20px; 
+            font-size: 13px; font-weight: 800; display: inline-block; margin-bottom: 20px;
+        }
+
         @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes floatIn { from { opacity: 0; transform: scale(0.5) translateZ(-100px); } to { opacity: 1; transform: scale(1) translateZ(0); } }
 
         /* Modal Styles */
         .modal {
@@ -543,9 +667,11 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             </div>
 
             <div class="nav-links">
+                <a class="nav-link active" id="nav-home" onclick="showTab('home')">Dashboard</a>
                 <a class="nav-link" id="nav-guide" onclick="showTab('guide')">Logic</a>
                 <a class="nav-link" id="nav-report" onclick="viewLatest()">View Report</a>
                 <a class="nav-link" id="nav-history" onclick="showTab('history')">History</a>
+                <a class="nav-link" id="nav-profiler" onclick="showTab('profiler')">Profiler</a>
                 <a class="nav-link" id="nav-settings" onclick="showTab('settings')">Settings</a>
             </div>
         </div>
@@ -576,6 +702,48 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         <div class="card" style="text-align: center; background: linear-gradient(135deg, rgba(29,155,240,0.06), rgba(29,155,240,0.02)); border: 1px solid rgba(29,155,240,0.15); margin-top: 40px; padding: 45px;">
             <div style="font-weight: 800; font-size: 20px; margin-bottom: 15px;">Ready to begin?</div>
             <div style="font-size: 15px; color: var(--text-dim);">Ensure your <strong>X Authentication</strong> and <strong>AI Model</strong> are configured in Settings, then click <strong>Run Analysis</strong> in the header to start.</div>
+        </div>
+    </div>
+
+    <div id="profiler" class="container tab-content">
+        <div style="text-align:center; margin-bottom: 40px;">
+            <h1 style="font-size: 42px; font-weight: 800; margin-bottom: 15px;">Account Profiler</h1>
+            <p style="color: var(--text-dim); font-size: 16px;">See how any account is categorized by the X community via list membership analysis.</p>
+        </div>
+
+        <div class="card" style="padding: 40px; text-align: center; background: linear-gradient(135deg, #151921 0%, #0b0e14 100%);">
+            <div style="max-width: 500px; margin: 0 auto;">
+                <div style="font-weight: 800; font-size: 18px; margin-bottom: 20px;">Search X Username</div>
+                <div style="position: relative; display: flex; gap: 10px;">
+                    <span style="position: absolute; left: 20px; top: 50%; transform: translateY(-50%); color: var(--accent); font-weight: 800; font-size: 18px;">@</span>
+                    <input type="text" id="prof_user" placeholder="username" style="width: 100%; background: #000; border: 1px solid var(--border); padding: 16px 16px 16px 45px; border-radius: 12px; color: #fff; font-size: 16px; font-weight: 600; margin-bottom: 0;">
+                    <button onclick="generateProfile()" id="prof_btn" class="run-btn" style="margin: 0; padding: 0 30px;">Analyze</button>
+                </div>
+            </div>
+        </div>
+
+        <div id="prof_results" style="display: none; margin-top: 30px;">
+            <div class="card" style="padding: 30px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 30px; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
+                    <div>
+                        <div style="font-size: 13px; color: var(--text-dim); font-weight: 800; text-transform: uppercase; letter-spacing: 1px;">Analysis Results for</div>
+                        <div id="prof_res_user" style="font-size: 24px; font-weight: 800; color: var(--accent);">@username</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div id="prof_res_count" style="font-size: 24px; font-weight: 800; color: var(--text);">0</div>
+                        <div style="font-size: 11px; color: var(--text-dim); font-weight: 800; text-transform: uppercase;">List Memberships</div>
+                        <a id="prof_x_link" href="#" target="_blank" style="font-size: 10px; color: var(--accent); text-decoration: none; font-weight: 800; display: none; margin-top: 5px;">VIEW ON X ↗</a>
+                    </div>
+                </div>
+                
+                <div id="word_cloud" style="min-height: 440px; display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 15px; padding: 30px; background: rgba(0,0,0,0.2); border-radius: 20px; position: relative; overflow: hidden; perspective: 1000px;">
+                    <!-- Words will be injected here -->
+                </div>
+
+                <div id="prof_details" style="display: none; margin-top: 30px; border-top: 1px dashed var(--border); padding-top: 30px;">
+                    <!-- List details will be injected here -->
+                </div>
+            </div>
         </div>
     </div>
 
@@ -1000,8 +1168,125 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             `}).join('');
         }
 
-        async function openFolder() {
-            await fetch('/api/open-folder');
+        let currentMemberships = [];
+
+        async function generateProfile() {
+            const user = document.getElementById('prof_user').value.trim();
+            if (!user) return alert('Please enter a username');
+            
+            const btn = document.getElementById('prof_btn');
+            const results = document.getElementById('prof_results');
+            const cloud = document.getElementById('word_cloud');
+            const details = document.getElementById('prof_details');
+            
+            btn.disabled = true;
+            btn.innerText = 'Analyzing...';
+            results.style.display = 'none';
+            details.style.display = 'none';
+            cloud.innerHTML = '';
+            
+            try {
+                const r = await fetch('/api/profile', {
+                    method: 'POST',
+                    body: JSON.stringify({ username: user })
+                });
+                const d = await r.json();
+                
+                if (!d.success) throw new Error(d.error);
+                
+                currentMemberships = d.memberships || [];
+                
+                document.getElementById('prof_res_user').innerText = '@' + d.username;
+                document.getElementById('prof_res_count').innerText = d.list_count || 0;
+                
+                const xLink = document.getElementById('prof_x_link');
+                xLink.href = `https://x.com/${d.username}/lists/memberships`;
+                xLink.style.display = 'block';
+                
+                // Render Word Cloud
+                const counts = d.word_counts;
+                const words = Object.keys(counts);
+                
+                if (words.length === 0) {
+                    cloud.innerHTML = '<div style="color: var(--text-dim); font-weight: 600;">No lists found for this account.</div>';
+                } else {
+                    const maxCount = Math.max(...Object.values(counts));
+                    const colors = ['#1d9bf0', '#00ba7c', '#ffd400', '#f91880', '#7856ff', '#ff7a00'];
+                    
+                    words.forEach((w, i) => {
+                        const count = counts[w];
+                        const size = 14 + (count / maxCount) * 36; // Scale between 14px and 50px
+                        const color = colors[i % colors.length];
+                        const opacity = 0.5 + (count / maxCount) * 0.5;
+                        
+                        const span = document.createElement('span');
+                        span.className = 'cloud-word';
+                        span.innerText = w;
+                        span.style.fontSize = size + 'px';
+                        span.style.color = color;
+                        span.style.opacity = opacity;
+                        span.style.animation = `floatIn 0.5s ease-out ${i * 0.02}s both`;
+                        
+                        span.onclick = () => showWordDetails(w, span);
+                        
+                        cloud.appendChild(span);
+                    });
+                }
+                
+                results.style.display = 'block';
+            } catch (e) {
+                alert('Analysis failed: ' + e.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerText = 'Analyze';
+            }
+        }
+
+        function showWordDetails(word, el) {
+            document.querySelectorAll('.cloud-word').forEach(s => s.classList.remove('active'));
+            el.classList.add('active');
+            
+            const results = currentMemberships.filter(m => 
+                m.name.toLowerCase().includes(word.toLowerCase())
+            );
+            
+            const details = document.getElementById('prof_details');
+            details.style.display = 'block';
+            
+            details.innerHTML = `
+                <div class="word-tag"># ${word}</div>
+                <div style="font-size: 13px; color: var(--text-dim); margin-bottom: 15px; font-weight: 600;">
+                    Found in ${results.length} lists:
+                </div>
+                <div class="prof-detail-card">
+                    <table class="prof-table">
+                        <thead>
+                            <tr>
+                                <th>List Name</th>
+                                <th>Owner</th>
+                                <th style="text-align:right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${results.map(m => `
+                                <tr>
+                                    <td style="font-weight:700; color:var(--text)">${m.name}</td>
+                                    <td style="color:var(--text-dim)">@${m.owner}</td>
+                                    <td style="text-align:right">
+                                        <a href="https://x.com/i/lists/${m.id}" target="_blank" class="btn-action" style="padding: 6px 14px; font-size: 11px; display: inline-flex; text-decoration: none;">
+                                            VIEW LIST
+                                        </a>
+                                    </td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+            
+            setTimeout(() => {
+                details.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }, 100);
         }
 
         async function startAnalysis() {

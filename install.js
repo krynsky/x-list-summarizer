@@ -10,14 +10,14 @@ module.exports = {
             method: "shell.run",
             params: {
                 venv: "venv",
-                message: "python -m pip install --upgrade pip"
+                message: "pip install uv"
             }
         },
         {
             method: "shell.run",
             params: {
                 venv: "venv",
-                message: "pip install -r requirements.txt"
+                message: "uv pip install -r requirements.txt"
             }
         },
         {
