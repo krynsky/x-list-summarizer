@@ -5,6 +5,7 @@ Supports multiple backends: Ollama, Claude, OpenAI, LM Studio, etc.
 """
 
 import requests
+import time
 from anthropic import Anthropic
 from openai import OpenAI
 
@@ -33,6 +34,14 @@ class LLMProvider:
         elif self.provider == 'groq':
             if not endpoint or 'api.openai.com' in endpoint:
                 endpoint = 'https://api.groq.com/openai/v1'
+        elif self.provider == 'gemini':
+            if not endpoint: endpoint = 'https://generativelanguage.googleapis.com/v1beta/openai/'
+        elif self.provider == 'deepseek':
+            if not endpoint: endpoint = 'https://api.deepseek.com'
+        elif self.provider == 'openrouter':
+            if not endpoint: endpoint = 'https://openrouter.ai/api/v1'
+        elif self.provider == 'grok':
+            if not endpoint: endpoint = 'https://api.x.ai/v1'
         elif self.provider == 'claude':
             model = cfg.get('model', 'claude-3-5-sonnet-20240620')
         elif not endpoint:
@@ -62,21 +71,33 @@ class LLMProvider:
                 except Exception as e:
                     return {'active': False, 'message': f'Ollama Error: Check if {model} is pulled.'}
             
-            elif self.provider in ['lmstudio', 'vllm', 'generic_openai', 'groq', 'openai']:
+            elif self.provider in ['lmstudio', 'vllm', 'generic_openai', 'groq', 'openai', 'gemini', 'deepseek', 'openrouter', 'grok']:
                 try:
                     client = OpenAI(base_url=endpoint, api_key=api_key, timeout=10.0)
-                    # Tiny completion health check
-                    client.chat.completions.create(
-                        model=model,
-                        messages=[{"role": "user", "content": "hi"}],
-                        max_tokens=1
-                    )
-                    return {'active': True, 'message': f'Ready ({model})'}
+
+                    if self.provider == 'gemini':
+                        # Gemini free tier has very low chat RPM — use the cheap model-list
+                        # endpoint to verify the key is valid without burning a chat quota slot.
+                        available = [m.id for m in client.models.list()]
+                        # Model IDs come back as 'models/gemini-2.5-flash' — strip prefix
+                        bare = [m.split('/')[-1] for m in available]
+                        if model in bare or model in available:
+                            return {'active': True, 'message': f'Ready ({model})'}
+                        else:
+                            return {'active': False, 'message': f'Model {model} not found'}
+                    else:
+                        # Tiny completion health check for all other providers
+                        client.chat.completions.create(
+                            model=model,
+                            messages=[{"role": "user", "content": "hi"}],
+                            max_tokens=1
+                        )
+                        return {'active': True, 'message': f'Ready ({model})'}
                 except Exception as e:
                     err = str(e).lower()
                     if '401' in err or 'api key' in err: return {'active': False, 'message': 'Invalid API Key'}
-                    if '404' in err or 'model' in err: return {'active': False, 'message': f'Model {model} not found'}
-                    if 'rate_limit' in err or '429' in err: return {'active': False, 'message': 'Rate limited (429)'}
+                    if 'rate_limit' in err or '429' in err: return {'active': False, 'message': 'Rate limited — key is valid, try again shortly'}
+                    if '404' in err or 'not found' in err: return {'active': False, 'message': f'Model {model} not found'}
                     return {'active': False, 'message': f'Connection failed: {str(e)[:50]}...'}
 
             elif self.provider == 'claude':
@@ -108,7 +129,7 @@ class LLMProvider:
             return self._claude(prompt)
         elif self.provider == 'openai':
             return self._openai(prompt)
-        elif self.provider in ['lmstudio', 'vllm', 'generic_openai', 'groq']:
+        elif self.provider in ['lmstudio', 'vllm', 'generic_openai', 'groq', 'gemini', 'deepseek', 'openrouter', 'grok']:
             return self._openai_compatible(prompt)
         elif self.provider == 'llamacpp':
             return self._llamacpp(prompt)
@@ -123,45 +144,40 @@ class LLMProvider:
         """Build summarization prompt from aggregated data."""
         prompt_parts = []
         
-        prompt_parts.append("Analyze and summarize the following tweets from an X/Twitter list.")
-        prompt_parts.append("Focus on the main themes, discussions, and shared content.\n")
+        prompt_parts.append("You are analyzing tweets from an X/Twitter list. For each shared link listed below, write 1-2 sentences explaining why it's being shared and the overall sentiment expressed by the tweeters.")
+        prompt_parts.append("Output EXACTLY ONE LINE per link. No headers, no bullet points, no numbered lists, no extra text.\nFormat: domain.com :: Your 1-2 sentence explanation of why it's trending and the sentiment\n")
         
-        # 1. Sort and Limit Links (Top 20 by engagement)
         links = aggregated_data['by_link']
         if links:
-            links = sorted(links, key=lambda x: len(x[1]), reverse=True)[:20]
-            prompt_parts.append("TWEETS GROUPED BY SHARED LINKS (Top 20):")
-            for link, tweets in links: 
-                prompt_parts.append(f"\nLink: {link}")
-                prompt_parts.append(f"({len(tweets)} tweets about this link)")
-                for tweet in tweets[:5]:  # Limit to first 5 tweets per link
+            sorted_links = sorted(links, key=lambda x: len(x[1]), reverse=True)[:20]
+            prompt_parts.append("TOP SHARED LINKS (with sample tweets for context):")
+            for link, tweets in sorted_links:
+                try:
+                    from urllib.parse import urlparse as _up
+                    domain = _up(link).netloc.replace('www.', '') if link.startswith('http') else link
+                except:
+                    domain = link[:60]
+                prompt_parts.append(f"\n[{domain}] — {len(tweets)} tweets")
+                for tweet in tweets[:3]:
                     txt = tweet['text'][:200].replace('\n', ' ')
-                    prompt_parts.append(f"  - @{tweet['author']}: {txt}")
+                    prompt_parts.append(f"  @{tweet['author']}: {txt}")
         
-        # 2. Add individual tweets (Limit to 10)
         if aggregated_data['no_links']:
-            prompt_parts.append("\n\nOTHER TWEETS:")
-            for tweet in aggregated_data['no_links'][:10]: 
-                txt = tweet['text'][:200].replace('\n', ' ')
-                prompt_parts.append(f"  - @{tweet['author']}: {txt}")
-        
-        prompt_parts.append("\nStrictly provide the summary in the following structure for premium reporting. Important: Use ' :: ' (space-colon-colon-space) as the separator for table rows. Do NOT use markdown table syntax like '| --- |'.")
-        
-        prompt_parts.append("\n### TL;DR - What the list is talking about")
-        prompt_parts.append("Format: Group Name - Item 1, Item 2 :: Detailed synthesis of significance. (Do NOT include prefixes like 'X/Twitter List - ' in the Group Name. Provide 5-8 rows)")
-        
-        prompt_parts.append("\n### 1. Main Topics & Themes")
-        prompt_parts.append("Format: 1. Theme Name – Detailed synthesis. (Use the '–' separator)")
-        
-        prompt_parts.append("\n### 2. Most Shared Content & Why")
-        prompt_parts.append("Format: Content Title (or Domain) :: Mention count (e.g. 10 tweets) :: Why it's trending and sentiment. (Exactly 3 parts separated by ' :: ')")
+            prompt_parts.append("\n\nOTHER CONTEXT (tweets without shared links):")
+            for tweet in aggregated_data['no_links'][:5]:
+                txt = tweet['text'][:150].replace('\n', ' ')
+                prompt_parts.append(f"  @{tweet['author']}: {txt}")
         
         prompt = "\n".join(prompt_parts)
         
-        # 3. Final Truncation Safety (Limit to ~30k chars)
         if len(prompt) > 30000:
             print(f"⚠️ Prompt too large ({len(prompt)}), truncating...")
             prompt = prompt[:30000] + "\n\n[TRUNCATED DUE TO SIZE]"
+
+        # Groq has tighter per-minute token limits — cap prompt smaller to stay safe
+        if getattr(self, 'provider', '') == 'groq' and len(prompt) > 15000:
+            print(f"⚠️ Groq prompt large ({len(prompt)}), trimming to 15K...")
+            prompt = prompt[:15000] + "\n\n[TRUNCATED FOR GROQ LIMIT]"
             
         print(f"📝 Prompt built: {len(prompt)} characters")
         return prompt
@@ -220,32 +236,47 @@ class LLMProvider:
             return f"Error with OpenAI API: {e}"
     
     def _openai_compatible(self, prompt):
-        """OpenAI-compatible backends (LM Studio, vLLM, etc.)."""
+        """OpenAI-compatible backends (LM Studio, vLLM, Groq, Gemini, etc.)."""
         endpoint, api_key, model = self._get_effective_config()
         
-        try:
-            client = OpenAI(
-                base_url=endpoint,
-                api_key=api_key
-            )
-            response = client.chat.completions.create(
-                model=model,
-                messages=[{"role": "user", "content": prompt}],
-                max_tokens=2000,
-                timeout=180 # Increased for Groq big summaries
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            msg = str(e).lower()
-            print(f"❌ AI Error ({self.provider}): {msg}")
-            
-            # More helpful messages for common Groq errors
-            if 'rate_limit' in msg or '429' in msg:
-                return f"Error with {self.provider}: Rate limited. Please wait a minute or use a smaller list."
-            if 'context_length' in msg or 'maximum context' in msg:
-                return f"Error with {self.provider}: Prompt too large for this model's context window."
-            
-            return f"Error with {self.provider}: {str(e)}\n\nPlease check your settings and connection."
+        max_attempts = 3
+        retry_delays = [15, 30]  # seconds to wait between attempts
+
+        for attempt in range(max_attempts):
+            try:
+                client = OpenAI(base_url=endpoint, api_key=api_key)
+                response = client.chat.completions.create(
+                    model=model,
+                    messages=[{"role": "user", "content": prompt}],
+                    max_tokens=2000,
+                    timeout=180
+                )
+                return response.choices[0].message.content
+
+            except Exception as e:
+                msg = str(e).lower()
+                is_rate_limit = 'rate_limit' in msg or '429' in msg
+
+                if is_rate_limit and attempt < max_attempts - 1:
+                    wait = retry_delays[attempt]
+                    # Respect Retry-After header if present in the error message
+                    import re
+                    match = re.search(r'retry.after[^\d]*(\d+)', msg)
+                    if match:
+                        wait = min(int(match.group(1)) + 2, 60)
+                    print(f"⏳ {self.provider} rate limited (attempt {attempt+1}/{max_attempts}), waiting {wait}s...")
+                    time.sleep(wait)
+                    continue  # retry
+
+                # Final attempt failed or non-retriable error
+                print(f"❌ AI Error ({self.provider}): {msg}")
+                if is_rate_limit:
+                    if self.provider == 'gemini':
+                        return f"Error with gemini: Rate limited (free tier has low RPM). Wait 1–2 minutes, reduce Max Tweets in Settings, or switch to Groq."
+                    return f"Error with {self.provider}: Rate limited after {max_attempts} attempts. Try reducing Max Tweets in Settings, or wait a minute and retry."
+                if 'context_length' in msg or 'maximum context' in msg:
+                    return f"Error with {self.provider}: Prompt too large for this model's context window."
+                return f"Error with {self.provider}: {str(e)}\n\nPlease check your settings and connection."
     
     def _llamacpp(self, prompt):
         """llama.cpp server backend."""

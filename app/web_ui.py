@@ -37,14 +37,30 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps(data).encode())
 
+    def _send_root(self):
+        html = self.get_reconstructed_html().encode('utf-8')
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.send_header('Content-Length', str(len(html)))
+        self.send_header('Cache-Control', 'no-cache, no-store, must-revalidate')
+        self.send_header('Pragma', 'no-cache')
+        self.end_headers()
+        return html
+
+    def do_HEAD(self):
+        parsed = urlparse(self.path)
+        if parsed.path == '/':
+            self._send_root()
+        else:
+            super().do_HEAD()
+
     def do_GET(self):
         parsed = urlparse(self.path)
         
         if parsed.path == '/':
-            self.send_response(200)
-            self.send_header('Content-type', 'text/html')
-            self.end_headers()
-            self.wfile.write(self.get_reconstructed_html().encode())
+            html = self._send_root()
+            self.wfile.write(html)
+            return
             
         elif parsed.path == '/api/status':
             now = time.time()
@@ -296,8 +312,19 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             t0 = time.time()
             success, msg = await fetcher.login()
             print(f"🔑 [Performance] login took {time.time()-t0:.2f}s: {msg}")
-            
+            if not success:
+                if 'not found' in msg.lower() or 'no cookies' in msg.lower():
+                    raise Exception("No X session found. Please go to Settings → X Account and import your cookies first.")
+                elif '401' in msg or 'unauthorized' in msg.lower() or 'expired' in msg.lower():
+                    raise Exception("X session expired or unauthorized. Please go to Settings → X Account and re-import your cookies.")
+                elif '429' in msg or 'rate limit' in msg.lower():
+                    raise Exception("X Rate Limit reached while verifying session. Please wait 15 minutes and try again.")
+                else:
+                    raise Exception(f"X login failed: {msg}. Please go to Settings → X Account and re-import your cookies.")
+
             urls = config['twitter'].get('list_urls', [])
+            if not urls:
+                raise Exception("No X List URLs configured. Please go to Settings and add at least one X List URL.")
             max_t = config['twitter'].get('max_tweets', 100)
             
             all_tweets = []
@@ -318,6 +345,9 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             results = await asyncio.gather(*tasks)
             for r in results: all_tweets.extend(r)
             print(f"📥 [Performance] fetching took {time.time()-t1:.2f}s ({len(all_tweets)} tweets total)")
+
+            if not all_tweets:
+                raise Exception("No tweets were fetched from any of your lists. Your X session may have expired — please go to Settings → X Account and re-import your cookies.")
             
             self.app_state['progress'] = 60
             self.app_state['status_msg'] = "Analyzing links..."
@@ -339,7 +369,10 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             
             fname = f"summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.html"
             OUTPUT_DIR.mkdir(exist_ok=True)
-            fetcher.generate_html_report(agg, summary, OUTPUT_DIR / fname, tweet_count=len(all_tweets))
+            _prov = config['summarization']['provider']
+            _model = config['summarization']['options'].get(_prov, {}).get('model', '')
+            _ai_label = f"{_prov.capitalize()} \u00b7 {_model}" if _model else _prov.capitalize()
+            fetcher.generate_html_report(agg, summary, OUTPUT_DIR / fname, tweet_count=len(all_tweets), ai_model=_ai_label)
             
             # Save Metadata for History
             meta = {
@@ -360,7 +393,8 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             print(f"✅ [Performance] total run time: {time.time()-start_time:.2f}s")
         except Exception as e:
             err_msg = str(e)
-            if 'rate limit' in err_msg.lower() or '429' in err_msg:
+            # Only rewrite generic low-level rate limit errors that weren't already formatted above
+            if ('429' in err_msg or 'rate limit' in err_msg.lower()) and 'Please' not in err_msg:
                 err_msg = "X Rate Limit Reached. Please wait 15 minutes before trying again."
 
             print(f"❌ [Critical Error] {err_msg}")
@@ -408,25 +442,25 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 
         /* Header Precision Alignment */
         header {
-            display: flex; align-items: center; justify-content: flex-start;
+            display: flex; align-items: center; justify-content: center;
             padding: 0 40px; height: 90px;
             background: var(--header); border-bottom: 1px solid var(--border);
             position: sticky; top: 0; z-index: 100;
         }
         .main-nav {
-            position: absolute;
-            left: 50%;
-            transform: translateX(-50%);
             display: flex;
             align-items: center;
+            justify-content: space-between;
+            width: 100%;
+            max-width: 1400px;
             gap: 20px;
             white-space: nowrap;
         }
-        .logo-area { display: flex; align-items: center; gap: 14px; cursor: pointer; }
+        .logo-area { display: flex; align-items: center; gap: 14px; cursor: pointer; flex-shrink: 0; }
         .logo-box { 
-            width: 80px; height: 80px; border-radius: 20px; 
+            width: 64px; height: 64px; border-radius: 16px; 
             background: url("icon.png") center/cover;
-            box-shadow: 0 0 30px rgba(29, 155, 240, 0.25);
+            box-shadow: 0 0 20px rgba(29, 155, 240, 0.2);
         }
         .version { font-size: 11px; font-weight: 800; color: var(--text-dim); }
 
@@ -463,12 +497,12 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         .dot.active { background: var(--green); box-shadow: 0 0 10px var(--green); }
         .dot.error { background: var(--red); box-shadow: 0 0 10px var(--red); }
 
-        .nav-links { display: flex; align-items: center; gap: 15px; flex-shrink: 0; }
+        .nav-links { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
         .nav-link { 
             color: var(--text-dim); text-decoration: none; font-weight: 700; font-size: 14px; 
             cursor: pointer; transition: 0.2s;
             display: flex; align-items: center;
-            padding: 10px 20px; border-radius: 12px;
+            padding: 10px 18px; border-radius: 12px;
             white-space: nowrap;
         }
         .nav-link:hover { color: var(--text); background: rgba(255,255,255,0.03); }
@@ -637,17 +671,33 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             font-weight: 700;
             cursor: pointer;
         }
+
+        /* Ranking Modal Specifics */
+        .rank-table { width: 100%; border-collapse: collapse; margin-top: 20px; color: var(--text); }
+        .rank-table th { text-align: left; padding: 12px; border-bottom: 2px solid var(--border); color: var(--accent); font-size: 13px; text-transform: uppercase; }
+        .rank-table td { padding: 15px 12px; border-bottom: 1px solid var(--border); font-size: 14px; line-height: 1.4; }
+        .rank-num { font-weight: 800; color: var(--accent); font-size: 18px; }
+        .info-trigger { 
+            cursor: pointer; width: 22px; height: 22px; border-radius: 50%; 
+            background: var(--accent-dim); color: var(--accent); 
+            display: inline-flex; align-items: center; justify-content: center; 
+            font-size: 14px; font-weight: 800; border: 1px solid #1d9bf030;
+            transition: 0.2s;
+        }
+        .info-trigger:hover { background: var(--accent); color: #fff; transform: scale(1.1); }
+        
     </style>
 </head>
 <body>
     <header>
         <div class="main-nav">
+            <div class="logo-area" onclick="resetApp()">
+                <div class="logo-box"></div>
+            </div>
+
             <div class="middle-section">
-                <div class="logo-area" onclick="resetApp()" style="margin-right: 15px;">
-                    <div class="logo-box"></div>
-                </div>
                 <div class="status-container">
-                    <span class="status-label" id="run-status">Ready</span>
+                    <span class="status-label" id="run-status">Preparing...</span>
                     <div class="inline-p-con" id="inline-progress">
                         <div class="inline-p-bar" id="inline-p-bar"></div>
                     </div>
@@ -667,19 +717,18 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             </div>
 
             <div class="nav-links">
-                <a class="nav-link active" id="nav-home" onclick="showTab('home')">Dashboard</a>
-                <a class="nav-link" id="nav-guide" onclick="showTab('guide')">Logic</a>
-                <a class="nav-link" id="nav-report" onclick="viewLatest()">View Report</a>
-                <a class="nav-link" id="nav-history" onclick="showTab('history')">History</a>
-                <a class="nav-link" id="nav-profiler" onclick="showTab('profiler')">Profiler</a>
-                <a class="nav-link" id="nav-settings" onclick="showTab('settings')">Settings</a>
+                <a class="nav-link active" id="nav-home" href="javascript:void(0)" onclick="showTab('home')">Dashboard</a>
+                <a class="nav-link" id="nav-report" href="javascript:void(0)" onclick="viewLatest()">Report</a>
+                <a class="nav-link" id="nav-history" href="javascript:void(0)" onclick="showTab('history')">History</a>
+                <a class="nav-link" id="nav-profiler" href="javascript:void(0)" onclick="showTab('profiler')">Profiler</a>
+                <a class="nav-link" id="nav-settings" href="javascript:void(0)" onclick="showTab('settings')">Settings</a>
             </div>
         </div>
     </header>
 
     <div id="home" class="container tab-content active">
         <div style="text-align:center; margin: 60px 0 80px;">
-            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.5.0</span></h1>
+            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.6.0</span></h1>
             <p style="font-size: 18px; color: var(--text-dim); line-height: 1.6; max-width: 650px; margin: 0 auto;">Turn the noise of X into actionable intelligence. This premium tool analyzes curated lists to extract high-signal trends and media.</p>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
@@ -748,6 +797,74 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
     </div>
 
     <div id="settings" class="container tab-content">
+        <div style="margin-bottom: 30px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 25px;">
+            <div style="font-weight: 800; font-size: 20px;">⚙️ App Settings</div>
+            <div style="margin-left: auto; display: flex; gap: 8px;">
+                <a href="javascript:void(0)" onclick="toggleMethodology()" id="meth_toggle_btn" class="btn-action" style="font-size: 11px; padding: 6px 14px; background: #1d9bf020; border-color: #1d9bf040; color: #fff;">🧠 View Methodology</a>
+            </div>
+        </div>
+
+        <!-- Integrated Methodology Section (Collapsible) -->
+        <div id="methodology_sec" style="margin-bottom: 40px; border-bottom: 1px solid var(--border); padding-bottom: 40px; display: none;">
+            <div style="text-align: center; margin-bottom: 40px; position: relative;">
+                <button onclick="toggleMethodology(false)" style="position: absolute; right: 0; top: 0; background: transparent; border: 1px solid var(--border); color: var(--text-dim); padding: 8px 15px; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 700;">✖ Close</button>
+                <h2 style="font-size: 28px; font-weight: 800; margin-bottom: 10px;">Methodology & Under-the-Hood</h2>
+                <p style="color: var(--text-dim); font-size: 14px;">Understanding how the X List Summarizer processes your data for maximum signal.</p>
+            </div>
+
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 24px;">
+                <div class="card" style="margin-bottom: 0; padding: 25px;" id="meth_1">
+                    <div style="font-size: 18px; font-weight: 800; margin-bottom: 12px; color: var(--accent); display: flex; align-items: center; gap: 10px;">
+                        <span>📊</span> 1. Smart Fetching & Extraction
+                    </div>
+                    <p style="color: var(--text-dim); line-height: 1.5; font-size: 13px;">The app follows a <strong>"Latest-First"</strong> approach, fetching the newest content backward through history.</p>
+                    <ul class="guide-list" style="font-size: 12px;">
+                        <li><strong>Deep Link Extraction:</strong> We recursively scan <strong>Retweets and Quote Tweets</strong> to ensure shared links are tracked even when discussed indirectly.</li>
+                        <li><strong>Deduplication:</strong> If the same tweet appears in multiple lists, it is only counted once for engagement math.</li>
+                    </ul>
+                </div>
+
+                <div class="card" style="margin-bottom: 0; padding: 25px;" id="meth_2">
+                    <div style="font-size: 18px; font-weight: 800; margin-bottom: 12px; color: var(--accent); display: flex; align-items: center; gap: 10px;">
+                        <span>🧠</span> 2. Weighted Ranking
+                    </div>
+                    <p style="color: var(--text-dim); line-height: 1.5; font-size: 13px;">Low-signal noise is filtered using a weighted scoring algorithm for every grouped link:</p>
+                    <div style="background: #000; padding: 10px; border-radius: 6px; font-family: monospace; font-size: 11px; color: var(--accent); margin: 12px 0; text-align: center;">
+                        Likes + (RTs*1.5) + (Replies*2.0) + Quotes + Bookmarks
+                    </div>
+                    <ul class="guide-list" style="font-size: 12px;">
+                        <li><strong>Report Visibility:</strong> The top 30 filtered link-groups are displayed in your report.</li>
+                        <li><strong>AI Focus:</strong> We feed the top 20 groups to the AI for synthesis to ensure razor-sharp accuracy.</li>
+                    </ul>
+                </div>
+
+                <div class="card" style="margin-bottom: 0; padding: 25px;" id="meth_3">
+                    <div style="font-size: 18px; font-weight: 800; margin-bottom: 12px; color: var(--accent); display: flex; align-items: center; gap: 10px;">
+                        <span>🎞️</span> 3. Media Deduplication
+                    </div>
+                    <p style="color: var(--text-dim); line-height: 1.5; font-size: 13px;">Reports are kept lightweight and professional through advanced media handling:</p>
+                    <ul class="guide-list" style="font-size: 12px;">
+                        <li><strong>Group Deduplication:</strong> Identical images or videos shared multiple times in a retweet chain are rendered only once per cluster.</li>
+                        <li><strong>Click-to-Play:</strong> To bypass X's session-based video authentication, we render videos as clickable thumbnails that open the native tweet on X.</li>
+                    </ul>
+                </div>
+
+                <div class="card" style="margin-bottom: 0; padding: 25px;" id="meth_4">
+                    <div style="font-size: 18px; font-weight: 800; margin-bottom: 12px; color: var(--accent); display: flex; align-items: center; gap: 10px;">
+                        <span>🤖</span> 4. Transparent AI Synthesis
+                    </div>
+                    <p style="color: var(--text-dim); line-height: 1.5; font-size: 13px;">The AI synthesizes the messy stream of raw tweets into cohesive narrative themes:</p>
+                    <ul class="guide-list" style="font-size: 12px;">
+                        <li><strong>Model Labeling:</strong> Reports now explicitly state the exact provider and model (e.g. Grok-3, Llama-3.3) used for the analysis.</li>
+                        <li><strong>Domain Insight:</strong> Section C calculates the mention count and sentiment for trending domains.</li>
+                    </ul>
+                </div>
+            </div>
+            <div style="text-align: center; margin-top: 30px;">
+                <button class="run-btn" style="background: rgba(255,255,255,0.05); border: 1px solid var(--border); font-size: 12px; padding: 10px 25px;" onclick="toggleMethodology(false)">✖ Close Methodology</button>
+            </div>
+        </div>
+
         <div class="settings-grid">
             <div class="left-col">
                 <div class="card">
@@ -764,7 +881,12 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 </div>
 
                 <div class="card">
-                    <div class="sec-title">🤖 AI Intelligence</div>
+                    <div class="sec-title" style="justify-content: space-between;">
+                        <div style="display: flex; align-items: center; gap: 12px;">
+                            <span>🤖</span> AI Intelligence
+                        </div>
+                        <div class="info-trigger" onclick="openRankingModal()">?</div>
+                    </div>
                     <label>Provider</label>
                     <select id="s_prov" onchange="renderProviderOptions()">
                         <option value="groq">Groq (Free Cloud)</option>
@@ -772,6 +894,10 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                         <option value="lmstudio">LM Studio (Local)</option>
                         <option value="claude">Anthropic Claude</option>
                         <option value="openai">OpenAI GPT-4o</option>
+                        <option value="gemini">Google Gemini</option>
+                        <option value="deepseek">DeepSeek (V3)</option>
+                        <option value="grok">xAI Grok</option>
+                        <option value="openrouter">OpenRouter (All Models)</option>
                     </select>
 
                     <div id="ai_help" class="tip-box" style="margin-top: -10px; margin-bottom: 25px; display: none;"></div>
@@ -791,7 +917,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 </div>
             </div>
 
-            <div class="right-col">
+            <div class="right-col" id="auth_sec">
                 <div class="card">
                     <div class="sec-title">🔑 X Authentication</div>
                     <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 25px;">
@@ -816,12 +942,11 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                         <div class="enlarge-hint" onclick="openModal('screenshots/auth_guide.png')">🔍 Click to enlarge image</div>
                     </div>
 
-                    <button class="run-btn btn-full" onclick="saveCookies()">
-                        <span>🔑</span> Update Session Cookies
-                    </button>
                 </div>
             </div>
         </div>
+
+
     </div>
 
     <div id="history" class="container tab-content">
@@ -844,93 +969,37 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         <div id="history-grid"></div>
     </div>
 
-    <div id="guide" class="container tab-content">
-        <div style="max-width: 850px; margin: 40px auto;">
-            <div style="text-align: center; margin-bottom: 60px;">
-                <h1 style="font-size: 42px; font-weight: 800; margin-bottom: 20px;">Logic & Methodology</h1>
-                <p style="color: var(--text-dim); font-size: 16px;">Understanding how the X List Summarizer processes your data.</p>
-            </div>
-            
-            <div class="card" style="margin-bottom: 30px; padding: 40px; border-radius: 24px;">
-                <div style="font-size: 24px; font-weight: 800; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 15px;">
-                    <span>📊</span> 1. Quantity & Fetching
-                </div>
-                <p style="color: var(--text-dim); line-height: 1.7; font-size: 15px;">The app follows a <strong>"Latest-First"</strong> approach. It fetches a specific number of tweets per list based on your configurations.</p>
-                <ul class="guide-list">
-                    <li><strong>Per-List Limit:</strong> Managed via the "Max Tweets" setting (Default: 100).</li>
-                    <li><strong>Total Scope:</strong> If you have 5 lists and a limit of 100, the system analyzes 500 total tweets to find the highest signal.</li>
-                    <li><strong>Deduplication:</strong> If the same tweet appears in multiple lists, it is only counted once for engagement.</li>
-                </ul>
-            </div>
 
-            <div class="card" style="margin-bottom: 30px; padding: 40px; border-radius: 24px;">
-                <div style="font-size: 24px; font-weight: 800; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 15px;">
-                    <span>⏳</span> 2. Timeframe Analysis
-                </div>
-                <p style="color: var(--text-dim); line-height: 1.7; font-size: 15px;">The system does not use a rigid calendar cut-off (like "last 24 hours"). Instead, it prioritizes <strong>recency and depth</strong>.</p>
-                <ul class="guide-list">
-                    <li><strong>Dynamic Range:</strong> On busy lists with 50+ members, 100 tweets might cover the last 2 hours. On smaller, niche lists, the same 100 tweets could span several days.</li>
-                    <li><strong>The Logic:</strong> We grab the very newest content and move backward through history until your "Max Tweets" quota is filled.</li>
-                </ul>
-            </div>
-
-            <div class="card" style="margin-bottom: 30px; padding: 40px; border-radius: 24px;">
-                <div style="font-size: 24px; font-weight: 800; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 15px;">
-                    <span>🧠</span> 3. Engagement Ranking Logic
-                </div>
-                <p style="color: var(--text-dim); line-height: 1.7; font-size: 15px;">Low-signal "noise" is filtered out using a weighted scoring algorithm before the AI even sees the data:</p>
-                <ul class="guide-list">
-                    <li><strong>Link Aggregation:</strong> We identify external URLs and group all tweets that shared or discussed that specific link.</li>
-                    <li><strong>Weighted Scoring:</strong> Every link's "Power Score" is calculated based on: <strong>Likes + (Retweets * 1.5) + (Replies * 2) + Bookmarks</strong>.</li>
-                    <li><strong>Filtering:</strong> The top 30 link-groups are displayed in your report. For AI synthesis, the system focuses on the <strong>top 20</strong> to ensure high precision and stay within model limits.</li>
-                </ul>
-            </div>
-
-            <div class="card" style="margin-bottom: 30px; padding: 40px; border-radius: 24px;">
-                <div style="font-size: 24px; font-weight: 800; margin-bottom: 20px; color: var(--accent); display: flex; align-items: center; gap: 15px;">
-                    <span>🤖</span> 4. AI Synthesis & Report Sections
-                </div>
-                <p style="color: var(--text-dim); line-height: 1.7; font-size: 15px;">The final report is structured into three logical sections, each using a specific extraction algorithm:</p>
-                <div style="margin-top: 20px;">
-                    <div style="margin-bottom: 20px;">
-                        <strong style="color:var(--text); display:block; margin-bottom:5px;">Section A: TL;DR Table</strong>
-                        <div style="font-size: 14px; color: var(--text-dim);">Uses a "Key-Impact" extractor to identify the most significant items mentioned and explains <em>why</em> they matter to the community right now.</div>
-                    </div>
-                    <div style="margin-bottom: 20px;">
-                        <strong style="color:var(--text); display:block; margin-bottom:5px;">Section B: Main Topics & Themes</strong>
-                        <div style="font-size: 14px; color: var(--text-dim);">A synthetic layer that groups hundreds of individual tweets into cohesive narrative themes, providing a numbered "Executive Summary" of the broader discussion.</div>
-                    </div>
-                    <div>
-                        <strong style="color:var(--text); display:block; margin-bottom:5px;">Section C: Most Shared Content & Why</strong>
-                        <div style="font-size: 14px; color: var(--text-dim);">A data-driven ranker that pulls the top external links, calculates their mention count, and analyzes the sentiment/context for why they are trending.</div>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 
     <div id="report" class="container tab-content" style="max-width: 100%; padding: 0;">
         <iframe id="report-frame" style="width: 100%; height: calc(100vh - 90px); border: none;"></iframe>
     </div>
 
     <script>
-        let cfg = {};
-        function showTab(t) {
-            document.querySelectorAll('.tab-content').forEach(x => x.classList.remove('active'));
-            document.querySelectorAll('.nav-link').forEach(x => x.classList.remove('active'));
-            const tab = document.getElementById(t);
-            if (tab) tab.classList.add('active');
+        let cfg = { summarization: { options: {} }, twitter: { list_urls: [] } };
+        
+        // Critical: Ensure functions are available globally before everything else
+        window.showTab = function(t) {
+            console.log("Switching to tab:", t);
+            const tabs = document.querySelectorAll('.tab-content');
+            const navs = document.querySelectorAll('.nav-link');
             
-            const nav = document.getElementById('nav-' + t);
-            if(nav) nav.classList.add('active');
+            tabs.forEach(x => x.classList.remove('active'));
+            navs.forEach(x => x.classList.remove('active'));
             
-            if(t === 'history') loadHistory();
-        }
+            const targetTab = document.getElementById(t);
+            const targetNav = document.getElementById('nav-' + t);
+            
+            if (targetTab) targetTab.classList.add('active');
+            if (targetNav) targetNav.classList.add('active');
+            
+            if (t === 'history') loadHistory().catch(e => console.error("History error:", e));
+        };
 
         function resetApp() {
-            // Restore home screen and clear report frame
-            document.getElementById('report-frame').src = 'about:blank';
-            showTab('home');
+            const frame = document.getElementById('report-frame');
+            if (frame) frame.src = 'about:blank';
+            window.showTab('home');
         }
 
         let reportOpened = false;
@@ -1016,11 +1085,14 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         }
 
         async function viewLatest() {
-            const r = await fetch('/api/status');
-            const s = await r.json();
-            const reportName = s.last_report || 'latest';
-            loadInAppReport(reportName);
-            document.getElementById('progress-overlay').style.display = 'none';
+            try {
+                const r = await fetch('/api/status');
+                const s = await r.json();
+                const reportName = s.last_report || 'latest';
+                loadInAppReport(reportName);
+                const overlay = document.getElementById('progress-overlay');
+                if (overlay) overlay.style.display = 'none';
+            } catch(e) { console.error('viewLatest error:', e); }
         }
 
         function loadInAppReport(name) {
@@ -1030,13 +1102,15 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         }
 
         async function loadConfig() {
-            const r = await fetch('/api/config');
-            cfg = await r.json();
-            document.getElementById('s_urls').value = (cfg.twitter.list_urls || []).join('\\n');
-            document.getElementById('s_max').value = cfg.twitter.max_tweets;
-            document.getElementById('s_prov').value = cfg.summarization.provider;
-            document.getElementById('s_owner').value = cfg.twitter.list_owner || '';
-            renderProviderOptions();
+            try {
+                const r = await fetch('/api/config');
+                cfg = await r.json();
+                document.getElementById('s_urls').value = (cfg.twitter.list_urls || []).join('\\n');
+                document.getElementById('s_max').value = cfg.twitter.max_tweets;
+                document.getElementById('s_prov').value = cfg.summarization.provider;
+                document.getElementById('s_owner').value = cfg.twitter.list_owner || '';
+                renderProviderOptions();
+            } catch(e) { console.error('loadConfig error:', e); }
         }
 
         function toggleCustomModel() {
@@ -1056,9 +1130,13 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             const custom = document.getElementById('p_mod_custom');
             
             const presets = {
-                'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'mixtral-8x7b-32768'],
-                'claude': ['claude-3-5-sonnet-20240620', 'claude-3-opus-20240229', 'claude-3-haiku-20240307'],
-                'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo'],
+                'groq': ['llama-3.3-70b-versatile', 'llama-3.1-8b-instant', 'openai/gpt-oss-120b'],
+                'claude': ['claude-sonnet-4-6', 'claude-opus-4-6', 'claude-haiku-4-5'],
+                'openai': ['gpt-4o', 'gpt-4.1', 'gpt-4o-mini', 'gpt-5'],
+                'gemini': ['gemini-2.5-flash', 'gemini-2.5-flash-lite', 'gemini-2.5-pro', 'gemini-3-flash-preview'],
+                'deepseek': ['deepseek-chat', 'deepseek-reasoner'],
+                'grok': ['grok-3-latest', 'grok-2-latest', 'grok-beta'],
+                'openrouter': ['google/gemini-2.5-flash', 'anthropic/claude-sonnet-4-6', 'deepseek/deepseek-chat', 'meta-llama/llama-3.3-70b-instruct'],
                 'ollama': ['qwen2.5:7b', 'llama3.1', 'mistral', 'phi3'],
                 'lmstudio': ['local-model']
             };
@@ -1088,11 +1166,15 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 
             const helpEl = document.getElementById('ai_help');
             const helpTexts = {
-                'groq': '<strong>Setup Groq (Free Cloud):</strong><br>1. Get an API key from the <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a>.<br>2. Recommended model: <code>llama-3.3-70b-versatile</code>',
+                'groq': '<strong>Setup Groq (Free Cloud):</strong><br>1. Get an API key from the <a href="https://console.groq.com/keys" target="_blank" style="color:var(--accent);">Groq Console</a>.<br>2. Recommended: <code>llama-3.3-70b-versatile</code> (fast, 128K context) or <code>openai/gpt-oss-120b</code> (highest capability)',
                 'ollama': '<strong>Setup Ollama (Local):</strong><br>1. Ensure <a href="https://ollama.com" target="_blank" style="color:var(--accent);">Ollama</a> is running.<br>2. Run <code>ollama pull qwen2.5:7b</code> in your terminal.',
                 'lmstudio': '<strong>Setup LM Studio (Local):</strong><br>1. Download <a href="https://lmstudio.ai/" target="_blank" style="color:var(--accent);">LM Studio</a>.<br>2. Load a model (e.g., <code>Qwen 2.5 7B</code>) and click <strong>Start Server</strong>.<br>3. Default endpoint: <code>http://localhost:1234/v1</code>',
-                'claude': '<strong>Setup Claude:</strong><br>1. Get an API key from the <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">Anthropic Console</a>.<br>2. Recommended: <code>claude-3-5-sonnet-20240620</code>',
-                'openai': '<strong>Setup OpenAI:</strong><br>1. Get an API key from the <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">OpenAI Platform</a>.<br>2. Recommended: <code>gpt-4o</code>'
+                'claude': '<strong>Setup Claude:</strong><br>1. Get an API key from the <a href="https://console.anthropic.com/settings/keys" target="_blank" style="color:var(--accent);">Anthropic Console</a>.<br>2. Recommended: <code>claude-sonnet-4-6</code> (default, 1M context) or <code>claude-opus-4-6</code> (most powerful)',
+                'openai': '<strong>Setup OpenAI:</strong><br>1. Get an API key from the <a href="https://platform.openai.com/api-keys" target="_blank" style="color:var(--accent);">OpenAI Platform</a>.<br>2. Recommended: <code>gpt-4.1</code> (best value) or <code>gpt-5</code> (most capable)',
+                'gemini': '<strong>Setup Google Gemini:</strong><br>1. Get an API key from <a href="https://aistudio.google.com/app/apikey" target="_blank" style="color:var(--accent);">Google AI Studio</a>.<br>2. Recommended: <code>gemini-2.5-flash</code> (Fast, 1M context, reasoning)',
+                'deepseek': '<strong>Setup DeepSeek:</strong><br>1. Get an API key from <a href="https://platform.deepseek.com/" target="_blank" style="color:var(--accent);">DeepSeek Platform</a>.<br>2. Recommended: <code>deepseek-chat</code> (V3, general) or <code>deepseek-reasoner</code> (chain-of-thought)',
+                'grok': '<strong>Setup xAI Grok:</strong><br>1. Get an API key from the <a href="https://console.x.ai/" target="_blank" style="color:var(--accent);">xAI Console</a>.<br>2. Recommended: <code>grok-3-latest</code> (latest flagship) or <code>grok-2-latest</code> (fast, cost-effective). Earns 20% xAI credit back on X API spend.',
+                'openrouter': '<strong>Setup OpenRouter:</strong><br>1. Get an API key from <a href="https://openrouter.ai/keys" target="_blank" style="color:var(--accent);">OpenRouter</a>.<br>2. Access any model through a single API key. Recommended: <code>google/gemini-2.5-flash</code>'
             };
             
             if (helpTexts[p]) {
@@ -1295,6 +1377,34 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             await fetch('/api/run', { method: 'POST', body: '{}' });
         }
 
+        function openRankingModal() {
+            document.getElementById('rankingModal').style.display = 'flex';
+        }
+        function closeRankingModal() {
+            document.getElementById('rankingModal').style.display = 'none';
+        }
+
+        function toggleMethodology(show, targetId) {
+            const sec = document.getElementById('methodology_sec');
+            const btn = document.getElementById('meth_toggle_btn');
+            
+            // If called without arguments, toggle current state
+            const shouldShow = (show !== undefined) ? show : (sec.style.display === 'none');
+            
+            if (shouldShow) {
+                sec.style.display = 'block';
+                btn.innerHTML = '🧠 Hide Methodology';
+                setTimeout(() => {
+                    const scrollTarget = targetId ? document.getElementById(targetId) : sec;
+                    scrollTarget.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }, 100);
+            } else {
+                sec.style.display = 'none';
+                btn.innerHTML = '🧠 View Methodology';
+                window.scrollTo({ top: 0, behavior: 'smooth' });
+            }
+        }
+
         loadConfig();
         setInterval(poll, 1500);
     </script>
@@ -1303,6 +1413,76 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
     <div id="imageModal" class="modal" onclick="closeModal()">
         <span class="close-modal" onclick="closeModal()">&times;</span>
         <img class="modal-content" id="modalImg" onclick="event.stopPropagation()">
+    </div>
+
+    <!-- Ranking Modal -->
+    <div id="rankingModal" class="modal" onclick="closeRankingModal()">
+        <span class="close-modal" onclick="closeRankingModal()">&times;</span>
+        <div class="modal-content card" style="max-width: 800px; cursor: default; padding: 40px;" onclick="event.stopPropagation()">
+            <h2 style="margin-top: 0; font-size: 28px; font-weight: 800; border-bottom: 1px solid var(--border); padding-bottom: 20px;">
+                Intelligence Provider Ranking
+            </h2>
+            <p style="color: var(--text-dim); font-size: 14px; line-height: 1.6; margin-bottom: 25px;">
+                Based on latency, context window size, and instruction-following for summarization tasks.
+            </p>
+            <table class="rank-table">
+                <thead>
+                    <tr>
+                        <th style="width: 60px;">Rank</th>
+                        <th>Provider</th>
+                        <th>Why it belongs here</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td class="rank-num">1</td>
+                        <td><strong>Groq</strong><br><span style="font-size:11px; color:var(--text-dim);">Llama 3.3 70B</span></td>
+                        <td><strong>Speed King.</strong> Near-instant reporting. Best for quick summaries.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">2</td>
+                        <td><strong>Gemini</strong><br><span style="font-size:11px; color:var(--text-dim);">1.5 Flash</span></td>
+                        <td><strong>Context King.</strong> 1.5M token window. Can summarize 1,000+ tweets without truncation.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">3</td>
+                        <td><strong>Claude</strong><br><span style="font-size:11px; color:var(--text-dim);">3.5 Sonnet</span></td>
+                        <td><strong>Writing Quality.</strong> Best synthesis and capture of conversational nuance.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">4</td>
+                        <td><strong>Grok</strong><br><span style="font-size:11px; color:var(--text-dim);">Grok-3</span></td>
+                        <td><strong>The Super-Model.</strong> Deeply integrated with X content. Unrivaled reasoning and freshness.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">5</td>
+                        <td><strong>DeepSeek</strong><br><span style="font-size:11px; color:var(--text-dim);">V3 (Chat)</span></td>
+                        <td><strong>Efficiency Expert.</strong> Matches GPT-4o intelligence at 1/10th the cost.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">5</td>
+                        <td><strong>OpenAI</strong><br><span style="font-size:11px; color:var(--text-dim);">GPT-4o</span></td>
+                        <td><strong>The Reliability Go-to.</strong> Strong reasoning, widely supported.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">6</td>
+                        <td><strong>OpenRouter</strong><br><span style="font-size:11px; color:var(--text-dim);">All Models</span></td>
+                        <td><strong>The Safety Net.</strong> Access any model instantly without code changes.</td>
+                    </tr>
+                    <tr>
+                        <td class="rank-num">7</td>
+                        <td><strong>Local</strong><br><span style="font-size:11px; color:var(--text-dim);">Ollama/LMStudio</span></td>
+                        <td><strong>Privacy First.</strong> Zero data leaves your machine. Slower but secure.</td>
+                    </tr>
+                </tbody>
+            </table>
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 15px; margin-top: 30px;">
+                <button class="run-btn" style="background: #1d9bf020; border: 1px solid #1d9bf040;" onclick="closeRankingModal(); toggleMethodology(true, 'meth_2')">
+                    🧠 View Scoring Logic
+                </button>
+                <button class="run-btn btn-full" onclick="closeRankingModal()">Got it</button>
+            </div>
+        </div>
     </div>
 </body>
 </html>'''

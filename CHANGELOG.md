@@ -2,6 +2,25 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.6.0] - 2026-02-22
+
+### Added
+- **xAI Grok Integration**: Officially added support for xAI's Grok models (Grok-3, Grok-2, Grok-beta) via a new OpenAI-compatible provider option.
+- **Deep Recursive Extraction**: Upgraded the link discovery engine to recursively scan **Retweets and Quote Tweets**. The system now captures high-signal content even when it's shared indirectly.
+- **Weighted Power Scoring**: Enhanced the engagement algorithm. Link rankings now factor in **Bookmarks and Quotes** alongside Likes, Retweets, and Replies for a more accurate "pulse" of the community.
+- **Report Transparency**: Generated reports now explicitly display the **AI Provider and Model** used for the synthesis, ensuring full traceability of insights.
+- **Methodology Deep Dive**: Integrated a comprehensive "Under-the-Hood" section directly into the Settings tab. It provides a collapsible, interactive guide to the app's internal logic, scoring, and media handling.
+
+### Changed
+- **Settings UI Revamp**: Reorganized the Settings page to put Methodology at the forefront. Simplified navigation by removing the standalone Logic tab and adding a dynamic "View/Hide Methodology" toggle in the header.
+- **Intelligent Media Handling**:
+    - **Deduplication**: Implemented cluster-aware deduplication to prevent the same image or video from appearing multiple times in a report's retweet chain.
+    - **Reliable Video Access**: Replaced direct video embedding with clickable high-res thumbnails that link to the source tweet, bypassing X's session-based authentication issues for a 100% playback success rate.
+
+### Fixed
+- **Twikit Backend Resilience**: Corrected a critical attribute mapping bug where retweets and quotes were not being processed due to library-specific naming changes (`retweeted_tweet` vs `retweeted_status`).
+- **X List Metadata**: Improved the accumulation logic for multi-list reports. List Cards now accurately aggregate member counts and list names across all sources.
+
 ## [1.5.0] - 2026-02-05
 
 ### Added
