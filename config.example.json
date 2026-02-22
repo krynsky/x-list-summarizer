@@ -34,6 +34,10 @@
             "openrouter": {
                 "model": "google/gemini-2.0-flash-001",
                 "api_key": ""
+            },
+            "grok": {
+                "model": "grok-3",
+                "api_key": ""
             }
         }
     },

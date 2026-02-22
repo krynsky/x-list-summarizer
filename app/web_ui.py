@@ -734,18 +734,18 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
             <div class="card" style="padding: 35px; border-radius: 28px;">
                 <span style="font-size: 36px; display: block; margin-bottom: 20px;">🔍</span>
-                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">Smart Fetching</div>
-                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Automatically dives into your configured X Lists to retrieve the latest posts, including high-resolution images and videos.</div>
+                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">Deep Extraction</div>
+                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Recursively scans Retweets and Quote Tweets to capture shared links and deduplicated media, ensuring no high-signal content is missed.</div>
             </div>
             <div class="card" style="padding: 35px; border-radius: 28px;">
                 <span style="font-size: 36px; display: block; margin-bottom: 20px;">📈</span>
-                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">Engagement Ranking</div>
-                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Identifies trending external links by calculating a custom engagement score (Likes + RTs + Replies + Bookmarks).</div>
+                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">Power Scoring</div>
+                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Identifies trending topics via a weighted algorithm (Likes + RTs + Replies + Quotes + Bookmarks) to filter out low-value noise.</div>
             </div>
             <div class="card" style="padding: 35px; border-radius: 28px;">
                 <span style="font-size: 36px; display: block; margin-bottom: 20px;">🤖</span>
-                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">AI Synthesis</div>
-                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Uses advanced LLMs to read through hundreds of posts and synthesize a structured executive summary of the discussion.</div>
+                <div style="font-weight: 800; font-size: 19px; margin-bottom: 12px;">AI Intelligence</div>
+                <div style="font-size: 14px; color: var(--text-dim); line-height: 1.6;">Harnesses xAI Grok, Claude, and Llama 3 to synthesize hundreds of posts into structured reports with explicit model labeling.</div>
             </div>
         </div>
         <div class="card" style="text-align: center; background: linear-gradient(135deg, rgba(29,155,240,0.06), rgba(29,155,240,0.02)); border: 1px solid rgba(29,155,240,0.15); margin-top: 40px; padding: 45px;">

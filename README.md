@@ -1,32 +1,38 @@
 # X List Summarizer
 
-> 🤖 AI-powered summarization of X/Twitter lists with multi-LLM support
+> 🤖 **v1.6.0** — AI-powered summarization of X/Twitter lists with multi-LLM support
 
 A Pinokio application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
 
 <p align="center">
-  <img src="screenshots/dashboard.png" width="100%" />
   <img src="screenshots/report.png" width="100%" />
 </p>
 
 ## ✨ Features
 
 - **🚀 Unified Dashboard**: A premium, dark-mode web interface to manage everything.
-- **� Account Profiler**: Analyze account personas using interactive word clouds and detailed list membership drill-downs.
-- **�📋 Public & Private Lists**: Access both public and private X lists.
+- **🧮 Weighted Power Scoring**: Engagement rankings now factor in **Bookmarks and Quotes** alongside Likes, RTs, and Replies for a more accurate "pulse" of the community.
+- **🔄 Deep Recursive Extraction**: Upgraded engine to recursively scan **Retweets and Quote Tweets**, capturing links even when shared indirectly.
+- **🧠 Integrated Methodology**: A new "Under-the-Hood" section in Settings with a collapsible guide to scoring, logic, and media handling.
+- **🤖 xAI Grok Integration**: Official support for Grok-3, Grok-2, and Grok-beta via OpenAI-compatible endpoints.
+- **🎞️ Intelligent Media Handling**:
+    - **Deduplication**: Cluster-aware logic to prevent duplicate media in retweet chains.
+    - **Reliable Videos**: Clickable high-res thumbnails that proxy to the source tweet for 100% playback success.
+- **🔍 Account Profiler**: Analyze account personas using interactive word clouds and detailed list membership drill-downs.
+- **📊 Report Transparency**: Every report now explicitly labels the **AI Provider and Model** used for the analysis.
+- **📋 Public & Private Lists**: Access both public and private X lists.
 - **🔐 Persistent Sessions**: Log in once via browser cookies, verified automatically.
 - **🧬 Native Link Previews**: X-style cards (Title, Image, Description) rendered directly in the report for external links.
 - **📦 Multi-LLM Support**:
     - **Local**: Ollama, LM Studio
-    - **Cloud**: Groq (Free), Anthropic Claude, OpenAI
+    - **Cloud**: Groq (Free), Anthropic Claude, OpenAI, xAI Grok, DeepSeek, OpenRouter
 - **⚡ Groq Support**: Ultra-fast inference with Llama 3 models on Groq.
 - **🌐 Website Favicons**: High-quality website icons for shared links in the "Most Shared Content" section.
 - **🔗 Smart Aggregation**: Groups tweets by shared external links to find trending stories.
-- **🎥 Enhanced Media**: Built-in video player with improved playback and deduplication.
 - **🎨 Premium Reports**: Generates responsive, self-contained HTML reports with modern CSS (Inter font, Glassmorphism).
-- **�️ Account Protection**: Smart User ID caching and randomized request staggering to stay within X rate limits.
+- **🛡️ Account Protection**: Smart User ID caching and randomized request staggering to stay within X rate limits.
 - **🚀 Turbocharged Install**: Powered by `uv` for near-instant package installation and environment setup.
-- **�🚦 Robust Health Checks**: End-to-end verification for both X Authentication and AI Provider connectivity.
+- **🏥 Robust Health Checks**: End-to-End verification for X Auth and AI Provider health.
 
 ## 📦 Installation
 
