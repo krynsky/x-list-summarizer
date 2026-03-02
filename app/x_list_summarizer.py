@@ -369,7 +369,7 @@ class XListFetcher:
             return tweets
 
     def aggregate_by_links(self, tweets: list) -> dict:
-        """Group tweets by link and sort by engagement."""
+        """Group tweets by link and sort by engagement, weighted by author diversity."""
         by_link = defaultdict(list)
         no_links = []
         for t in tweets:
@@ -380,12 +380,45 @@ class XListFetcher:
                         continue
                     by_link[link].append(t)
             else: no_links.append(t)
-        
-        sorted_links = sorted(by_link.items(), key=lambda x: sum(
-            t['likes'] + (t['retweets'] * 1.5) + (t['replies'] * 2.0) + t['quotes'] + t['bookmarks'] for t in x[1]
-        ), reverse=True)
-        
-        return {'by_link': sorted_links, 'no_links': no_links}
+
+        def _score(link_tweets):
+            base = sum(
+                t['likes'] + (t['retweets'] * 1.5) + (t['replies'] * 2.0) + t['quotes'] + t['bookmarks']
+                for t in link_tweets
+            )
+            # Multiply by number of unique authors sharing this link.
+            # Community consensus (multiple people sharing) ranks above a single curator.
+            unique_authors = len({t['author'] for t in link_tweets})
+            return base * unique_authors
+
+        sorted_links = sorted(by_link.items(), key=lambda x: _score(x[1]), reverse=True)
+
+        # Per-author cap: limit sole-author links to 2 entries in the final list.
+        # Multi-author links (community consensus) are never capped.
+        # This prevents one prolific curator from flooding the top-20.
+        PER_AUTHOR_CAP = 2
+        author_counts: dict = {}
+        capped: list = []
+        overflow: list = []
+        for item in sorted_links:
+            link, link_tweets = item
+            authors = {t['author'] for t in link_tweets}
+            if len(authors) > 1:
+                # Community-shared link → always include, no cap applied
+                capped.append(item)
+            else:
+                sole_author = next(iter(authors))
+                count = author_counts.get(sole_author, 0)
+                if count < PER_AUTHOR_CAP:
+                    author_counts[sole_author] = count + 1
+                    capped.append(item)
+                else:
+                    overflow.append(item)
+
+        # Fill remaining slots from overflow (preserving score order)
+        final = capped + overflow
+        return {'by_link': final, 'no_links': no_links}
+
 
     def _build_card_html(self, tweet_data):
         """Build HTML for a link preview card inside a tweet."""
@@ -489,7 +522,7 @@ class XListFetcher:
         </div>'''
 
     def _parse_ai_insights(self, ai_summary):
-        """Parse AI output (domain :: why lines) into {domain: why} dict."""
+        """Parse AI output into {key: why} dict. Keys may be full URLs or domains."""
         insights = {}
         if not ai_summary:
             return insights
@@ -497,14 +530,29 @@ class XListFetcher:
             line = line.strip()
             if ' :: ' in line:
                 parts = line.split(' :: ', 1)
-                domain = parts[0].strip().lower().lstrip('0123456789. -*#[]')
+                raw_key = parts[0].strip().lstrip('0123456789. -*#[]')
                 why = parts[1].strip()
-                if domain and why:
-                    insights[domain] = why
-                    # Also index by base domain (e.g. cloudflare.com → blog.cloudflare.com)
+                if not raw_key or not why:
+                    continue
+                # Store by the exact key the AI used (could be a full URL or domain)
+                insights[raw_key] = why
+                # Also store by lowercased version for case-insensitive matching
+                insights[raw_key.lower()] = why
+                # Extract and store by domain as a fallback (only if not already set)
+                try:
+                    from urllib.parse import urlparse as _up
+                    if raw_key.startswith('http'):
+                        domain = _up(raw_key).netloc.replace('www.', '').lower()
+                    else:
+                        domain = raw_key.lower()
+                    if domain and domain not in insights:
+                        insights[domain] = why
+                    # Also index by base domain (e.g. blog.example.com → example.com)
                     base = '.'.join(domain.split('.')[-2:]) if domain.count('.') >= 2 else domain
-                    if base not in insights:
+                    if base and base not in insights:
                         insights[base] = why
+                except Exception:
+                    pass
         return insights
 
     def generate_html_report(self, aggregated, ai_summary, output_path, tweet_count=0, ai_model=''):
@@ -530,14 +578,20 @@ class XListFetcher:
 
         owner_info = f"by {self.list_info['owner_name'] or 'Unknown'} (@{self.list_info['owner']}) &bull; {self.list_info['member_count']:,} members total"
         
-        # Parse AI insights into {domain: why} lookup
+        # Parse AI insights into lookup dict (keyed by URL and/or domain)
         insights = self._parse_ai_insights(ai_summary)
         
         # Build "Most Shared Content & Why" table with inline expandable tweet rows
         table_rows = ""
         for i, (link, tweets) in enumerate(aggregated['by_link'][:20]):
             domain = self._extract_domain(link)
-            why = insights.get(domain, '')
+            # Lookup priority: 1) exact URL, 2) truncated URL (as sent to AI), 3) domain, 4) base domain
+            key_80 = link[:80] if len(link) > 80 else link
+            why = (insights.get(link)
+                   or insights.get(link.lower())
+                   or insights.get(key_80)
+                   or insights.get(key_80.lower())
+                   or insights.get(domain))
             if not why:
                 base = '.'.join(domain.split('.')[-2:]) if domain.count('.') >= 2 else domain
                 why = insights.get(base, '&mdash;')

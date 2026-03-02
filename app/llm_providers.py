@@ -145,19 +145,16 @@ class LLMProvider:
         prompt_parts = []
         
         prompt_parts.append("You are analyzing tweets from an X/Twitter list. For each shared link listed below, write 1-2 sentences explaining why it's being shared and the overall sentiment expressed by the tweeters.")
-        prompt_parts.append("Output EXACTLY ONE LINE per link. No headers, no bullet points, no numbered lists, no extra text.\nFormat: domain.com :: Your 1-2 sentence explanation of why it's trending and the sentiment\n")
+        prompt_parts.append("Output EXACTLY ONE LINE per link. No headers, no bullet points, no numbered lists, no extra text.\nFormat: <full_url> :: Your 1-2 sentence explanation of why it's trending and the sentiment\nIMPORTANT: Use the exact URL shown in brackets as the key — every link must have its own unique line, even if two links share the same domain.\n")
         
         links = aggregated_data['by_link']
         if links:
             sorted_links = sorted(links, key=lambda x: len(x[1]), reverse=True)[:20]
             prompt_parts.append("TOP SHARED LINKS (with sample tweets for context):")
             for link, tweets in sorted_links:
-                try:
-                    from urllib.parse import urlparse as _up
-                    domain = _up(link).netloc.replace('www.', '') if link.startswith('http') else link
-                except:
-                    domain = link[:60]
-                prompt_parts.append(f"\n[{domain}] — {len(tweets)} tweets")
+                # Use the full URL as the key so the AI produces one unique summary per link
+                key = link[:80] if len(link) > 80 else link
+                prompt_parts.append(f"\n[{key}] — {len(tweets)} tweets")
                 for tweet in tweets[:3]:
                     txt = tweet['text'][:200].replace('\n', ' ')
                     prompt_parts.append(f"  @{tweet['author']}: {txt}")

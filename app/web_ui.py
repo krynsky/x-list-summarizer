@@ -705,15 +705,6 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                         <span style="font-size:11px;">▶</span> Run Analysis
                     </button>
                 </div>
-                
-                <div class="status-pill">
-                    <div id="ai-dot" class="dot active"></div>
-                    AI: <span id="ai-txt">Ready</span>
-                </div>
-                <div class="status-pill">
-                    <div id="x-dot" class="dot active"></div>
-                    X Auth: <span id="x-txt">OK</span>
-                </div>
             </div>
 
             <div class="nav-links">
@@ -799,6 +790,16 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
     <div id="settings" class="container tab-content">
         <div style="margin-bottom: 30px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 25px;">
             <div style="font-weight: 800; font-size: 20px;">⚙️ App Settings</div>
+            <div style="display: flex; gap: 10px; margin-left: 20px;">
+                <div class="status-pill" style="font-size: 11px; padding: 8px 16px; height: auto;">
+                    <div id="settings-ai-dot" class="dot active"></div>
+                    AI: <span id="settings-ai-txt">Ready</span>
+                </div>
+                <div class="status-pill" style="font-size: 11px; padding: 8px 16px; height: auto;">
+                    <div id="settings-x-dot" class="dot active"></div>
+                    X Auth: <span id="settings-x-txt">OK</span>
+                </div>
+            </div>
             <div style="margin-left: auto; display: flex; gap: 8px;">
                 <a href="javascript:void(0)" onclick="toggleMethodology()" id="meth_toggle_btn" class="btn-action" style="font-size: 11px; padding: 6px 14px; background: #1d9bf020; border-color: #1d9bf040; color: #fff;">🧠 View Methodology</a>
             </div>
@@ -1010,12 +1011,12 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 const r = await fetch('/api/status');
                 const s = await r.json();
                 
-                // Update status indicators
-                document.getElementById('ai-dot').className = 'dot ' + (s.ai_status.active ? 'active' : 'error');
-                document.getElementById('ai-txt').innerText = s.ai_status.message;
-                document.getElementById('x-dot').className = 'dot ' + (s.x_auth.active ? 'active' : 'error');
-                document.getElementById('x-txt').innerText = s.x_auth.message;
-                
+                // Update status indicators (settings page)
+                document.getElementById('settings-ai-dot').className = 'dot ' + (s.ai_status.active ? 'active' : 'error');
+                document.getElementById('settings-ai-txt').innerText = s.ai_status.message;
+                document.getElementById('settings-x-dot').className = 'dot ' + (s.x_auth.active ? 'active' : 'error');
+                document.getElementById('settings-x-txt').innerText = s.x_auth.message;
+
                 const statusEl = document.getElementById('run-status');
                 const progressCon = document.getElementById('inline-progress');
                 const progressBar = document.getElementById('inline-p-bar');
