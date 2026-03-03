@@ -1,8 +1,8 @@
 # X List Summarizer
 
-> 🤖 **v1.6.0** — AI-powered summarization of X/Twitter lists with multi-LLM support
+> 🤖 **v1.7.0** — AI-powered summarization of X/Twitter lists with multi-LLM support
 
-A Pinokio application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
+A [Pinokio](https://pinokio.co/) application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
 
 <p align="center">
   <img src="screenshots/report.png" width="100%" />
@@ -10,8 +10,11 @@ A Pinokio application that fetches tweets from X/Twitter lists (both public and 
 
 ## ✨ Features
 
-- **🚀 Unified Dashboard**: A premium, dark-mode web interface to manage everything.
-- **🧮 Weighted Power Scoring**: Engagement rankings now factor in **Bookmarks and Quotes** alongside Likes, RTs, and Replies for a more accurate "pulse" of the community.
+- 🚀 **Unified Dashboard**: A premium, dark-mode web interface to manage everything.
+- **🔍 Per-Link AI Insights**: Each link in the report now receives its own unique AI-generated summary instead of sharing a domain-level summary. Insight lookups use a prioritized exact-URL → truncated URL → domain → base-domain matching chain.
+- **⚖️ Multi-Author Link Scoring**: Link rankings are now boosted when the same URL is shared by multiple unique authors, surfacing true community consensus over single-user spam. A per-author cap prevents any one curator from dominating the results.
+- **🔗 Smart Session Resilience**: X's transient 404 authentication errors are now gracefully handled — the app proceeds with loaded cookies and retries automatically rather than failing the session.
+- **🧮 Weighted Power Scoring**: Engagement rankings factor in **Bookmarks and Quotes** alongside Likes, RTs, and Replies.
 - **🔄 Deep Recursive Extraction**: Upgraded engine to recursively scan **Retweets and Quote Tweets**, capturing links even when shared indirectly.
 - **🧠 Integrated Methodology**: A new "Under-the-Hood" section in Settings with a collapsible guide to scoring, logic, and media handling.
 - **🤖 xAI Grok Integration**: Official support for Grok-3, Grok-2, and Grok-beta via OpenAI-compatible endpoints.
@@ -36,9 +39,9 @@ A Pinokio application that fetches tweets from X/Twitter lists (both public and 
 
 ## 📦 Installation
 
-### Via Pinokio
+### Via [Pinokio](https://pinokio.co/)
 
-1. Open Pinokio
+1. Open [Pinokio](https://pinokio.co/)
 2. Click the **+ Create** button
 3. Paste this repository URL: `https://github.com/krynsky/x-list-summarizer`
 4. Click **Create**
@@ -95,7 +98,7 @@ Once complete, the report opens automatically. You can also view past reports in
 
 ## 🛠️ Tech Stack
 
-- **Platform**: [Pinokio](https://pinokio.computer)
+- **Platform**: [Pinokio](https://pinokio.co/)
 - **Language**: Python 3.10+
 - **X API Client**: [Twikit](https://github.com/d60/twikit)
 - **AI SDKs**: `openai`, `anthropic`
@@ -120,4 +123,4 @@ x-list-summarizer/
 
 ---
 
-**Made with ❤️ for the Pinokio and X.com community**
+**Made with ❤️ for the [Pinokio](https://pinokio.co/) and X.com community**

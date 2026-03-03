@@ -181,7 +181,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             self.app_state['status_msg'] = 'Ready'
             self.app_state['last_report'] = None
             self.send_json({'success': True})
-            
+
         else:
             super().do_GET()
 
@@ -417,7 +417,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>X List Summarizer</title>
+    <title>X List Summarizer v1.7</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <style>
         :root {
@@ -685,7 +685,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             transition: 0.2s;
         }
         .info-trigger:hover { background: var(--accent); color: #fff; transform: scale(1.1); }
-        
+
     </style>
 </head>
 <body>
@@ -719,7 +719,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
 
     <div id="home" class="container tab-content active">
         <div style="text-align:center; margin: 60px 0 80px;">
-            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.6.0</span></h1>
+            <h1 style="font-size: 52px; font-weight: 800; margin-bottom: 25px;">X List Summarizer <span style="font-size: 18px; opacity: 0.6; font-weight: 600; margin-left: 10px;">v1.7.0</span></h1>
             <p style="font-size: 18px; color: var(--text-dim); line-height: 1.6; max-width: 650px; margin: 0 auto;">Turn the noise of X into actionable intelligence. This premium tool analyzes curated lists to extract high-signal trends and media.</p>
         </div>
         <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;">
@@ -787,9 +787,11 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
         </div>
     </div>
 
+
     <div id="settings" class="container tab-content">
         <div style="margin-bottom: 30px; display: flex; gap: 15px; align-items: center; border-bottom: 1px solid var(--border); padding-bottom: 25px;">
             <div style="font-weight: 800; font-size: 20px;">⚙️ App Settings</div>
+            <span style="font-size: 10px; font-weight: 800; color: var(--accent); background: var(--blue-tip); border: 1px solid #1d9bf030; padding: 3px 9px; border-radius: 20px; letter-spacing: 0.5px; text-transform: uppercase;">v1.7</span>
             <div style="display: flex; gap: 10px; margin-left: 20px;">
                 <div class="status-pill" style="font-size: 11px; padding: 8px 16px; height: auto;">
                     <div id="settings-ai-dot" class="dot active"></div>
@@ -1101,6 +1103,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             frame.src = '/output/' + name;
             showTab('report');
         }
+
 
         async function loadConfig() {
             try {

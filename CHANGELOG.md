@@ -2,6 +2,17 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.7.0] - 2026-03-02
+
+### Added
+- **Per-Link AI Insights**: Each link now receives its own unique AI-generated summary. The lookup chain prioritizes exact URL match → truncated URL → domain → base domain, ensuring no two unique articles share the same AI summary.
+- **Multi-Author Scoring Boost**: Link rankings are multiplied by a `unique_authors` factor, surfacing URLs that genuinely resonated across the community rather than being posted repeatedly by one person. A per-author cap (2 links per author) prevents any single curator from dominating the results.
+
+### Fixed
+- **Session Resilience**: Transient 404 errors from X's user verification endpoint no longer hard-fail the session. The app now proceeds with loaded cookies and retries internally, matching typical real-world X API flakiness patterns.
+
+---
+
 ## [1.6.0] - 2026-02-22
 
 ### Added

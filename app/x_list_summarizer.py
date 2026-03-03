@@ -31,7 +31,7 @@ class XListFetcher:
         self.cache_dir = Path('cache')
         self.user_cache_path = self.cache_dir / 'user_ids.json'
         self.user_cache = self._load_user_cache()
-        
+
     def _load_user_cache(self):
         """Load username -> User ID mapping from local cache."""
         if not self.user_cache_path.exists():
