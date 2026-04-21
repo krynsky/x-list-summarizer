@@ -1,6 +1,6 @@
 # X List Summarizer
 
-> 🤖 **v1.7.0** — AI-powered summarization of X/Twitter lists with multi-LLM support
+> 🤖 **v1.8.0** — AI-powered summarization of X/Twitter lists with multi-LLM support
 
 A [Pinokio](https://pinokio.co/) application that fetches tweets from X/Twitter lists (both public and private), aggregates them by shared links, and generates beautiful AI-powered summaries using your choice of LLM backend.
 
@@ -11,6 +11,8 @@ A [Pinokio](https://pinokio.co/) application that fetches tweets from X/Twitter 
 ## ✨ Features
 
 - 🚀 **Unified Dashboard**: A premium, dark-mode web interface to manage everything.
+- **🔀 Dual Fetch Modes (NEW in 1.8)**: Switch on the Settings page between free **Browser Session (twikit)** and the **Official X API v2** (paid, stable). API mode uses a Bearer Token, runs against `api.x.com/2/lists/:id/tweets`, and survives X's homepage changes that periodically break scrapers. Estimated cost at pay-per-use pricing (~$0.001/request): pennies to a few dollars per month for typical workloads.
+- **🗞️ Compact Tweet Grid (NEW in 1.8)**: The "Other Relevant Tweets" section now renders as a 3-column grid of compact cards (responsive down to 1 column on mobile), keeping the report dense and scannable while still showing media and link previews when available.
 - **🔍 Per-Link AI Insights**: Each link in the report now receives its own unique AI-generated summary instead of sharing a domain-level summary. Insight lookups use a prioritized exact-URL → truncated URL → domain → base-domain matching chain.
 - **⚖️ Multi-Author Link Scoring**: Link rankings are now boosted when the same URL is shared by multiple unique authors, surfacing true community consensus over single-user spam. A per-author cap prevents any one curator from dominating the results.
 - **🔗 Smart Session Resilience**: X's transient 404 authentication errors are now gracefully handled — the app proceeds with loaded cookies and retries automatically rather than failing the session.
@@ -53,8 +55,11 @@ Click **Open Dashboard** in Pinokio. This launches the unified web interface.
 
 ### 2. Configure Settings
 Go to the **Settings** tab in the dashboard:
-- **X Authentication**: Paste your `auth_token` and `ct0` cookies.
-    > **How to find these?**
+- **X Authentication — Fetch Method**: Pick how the app talks to X.
+    - **Browser Session (twikit)** — free, paste `auth_token` and `ct0` cookies. May break when X changes internals; violates X's ToS.
+    - **Official X API v2** — paid but stable. Paste a Bearer Token from [developer.x.com](https://developer.x.com/en/portal/dashboard). Public lists only. Pay-per-use (~$0.001/request) typically costs pennies/month.
+
+    > **How to find the cookies (twikit mode)?**
     > 1. Open [x.com](https://x.com) in your browser (Chrome/Edge/Brave).
     > 2. Press **F12** to open Developer Tools.
     > 3. Go to the **Application** tab. (Or **Storage** in Firefox)
@@ -100,7 +105,7 @@ Once complete, the report opens automatically. You can also view past reports in
 
 - **Platform**: [Pinokio](https://pinokio.co/)
 - **Language**: Python 3.10+
-- **X API Client**: [Twikit](https://github.com/d60/twikit)
+- **X Backends**: [Twikit](https://github.com/d60/twikit) (cookie mode) **or** Official [X API v2](https://docs.x.com/x-api) via Bearer Token (1.8+)
 - **AI SDKs**: `openai`, `anthropic`
 - **Frontend**: Custom HTML5/CSS3 Dashboard
 

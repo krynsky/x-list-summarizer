@@ -14,8 +14,17 @@ from datetime import datetime
 
 # Add app to path for imports
 sys.path.append(str(Path(__file__).parent))
-from x_list_summarizer import XListFetcher
+from x_list_summarizer import XListFetcher, XApiFetcher
 from llm_providers import LLMProvider
+
+
+def _build_fetcher(config, list_owner=None):
+    """Factory: returns the configured fetcher (twikit cookies or X API Bearer)."""
+    tw = config.get('twitter', {}) if config else {}
+    method = tw.get('fetch_method', 'twikit')
+    if method == 'api':
+        return XApiFetcher(bearer_token=tw.get('api_bearer_token', ''), list_owner=list_owner)
+    return XListFetcher(list_owner=list_owner)
 
 PORT = 8765
 CONFIG_PATH = Path('config.json')
@@ -76,14 +85,20 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             
             if not last_x or x_aged > x_limit:
                 x_status = {'active': False, 'message': 'Not logged in'}
-                if COOKIES_PATH.exists():
+                cfg = self.load_config()
+                method = cfg.get('twitter', {}).get('fetch_method', 'twikit')
+                has_creds = (method == 'api' and cfg.get('twitter', {}).get('api_bearer_token')) or \
+                            (method == 'twikit' and COOKIES_PATH.exists())
+                if has_creds:
                     try:
-                        fetcher = XListFetcher()
+                        fetcher = _build_fetcher(cfg)
                         loop = asyncio.new_event_loop()
                         success, msg = loop.run_until_complete(fetcher.verify_session(retries=2))
                         x_status = {'active': success, 'message': msg}
                         loop.close()
                     except Exception as e: x_status = {'active': False, 'message': 'Auth Error'}
+                elif method == 'api':
+                    x_status = {'active': False, 'message': 'No Bearer Token'}
                 DashHandler._x_cache = x_status
                 DashHandler._x_cache_time = now
             else: x_status = DashHandler._x_cache
@@ -224,7 +239,7 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 return
             
             try:
-                fetcher = XListFetcher()
+                fetcher = _build_fetcher(self.load_config())
                 # Run async membership fetching in a synchronous context
                 memberships = asyncio.run(fetcher.get_user_memberships(username))
                 word_counts = self._analyze_word_frequencies(memberships)
@@ -275,7 +290,8 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 "claude": {"model": "claude-3-5-sonnet-20240620", "api_key": ""},
                 "openai": {"model": "gpt-4o", "api_key": ""}
             }},
-            "twitter": {"list_urls": [], "max_tweets": 100, "list_owner": None}
+            "twitter": {"list_urls": [], "max_tweets": 100, "list_owner": None,
+                        "fetch_method": "twikit", "api_bearer_token": ""}
         }
 
     def save_config(self, config):
@@ -307,20 +323,31 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             
             self.app_state.update({'status_msg': 'Initializing...', 'progress': 5, 'error': None})
             list_owner = config['twitter'].get('list_owner')
-            fetcher = XListFetcher(list_owner=list_owner)
+            fetcher = _build_fetcher(config, list_owner=list_owner)
             
             t0 = time.time()
             success, msg = await fetcher.login()
             print(f"🔑 [Performance] login took {time.time()-t0:.2f}s: {msg}")
             if not success:
-                if 'not found' in msg.lower() or 'no cookies' in msg.lower():
-                    raise Exception("No X session found. Please go to Settings → X Account and import your cookies first.")
-                elif '401' in msg or 'unauthorized' in msg.lower() or 'expired' in msg.lower():
-                    raise Exception("X session expired or unauthorized. Please go to Settings → X Account and re-import your cookies.")
-                elif '429' in msg or 'rate limit' in msg.lower():
-                    raise Exception("X Rate Limit reached while verifying session. Please wait 15 minutes and try again.")
+                is_api = config.get('twitter', {}).get('fetch_method') == 'api'
+                if is_api:
+                    if '401' in msg or 'unauthorized' in msg.lower() or 'invalid' in msg.lower():
+                        raise Exception("X API Bearer Token is invalid. Please update it in Settings → X Authentication.")
+                    elif 'no bearer' in msg.lower():
+                        raise Exception("No X API Bearer Token configured. Please add one in Settings → X Authentication.")
+                    elif '429' in msg or 'rate limit' in msg.lower():
+                        raise Exception("X API rate limit reached. Please wait and try again.")
+                    else:
+                        raise Exception(f"X API login failed: {msg}")
                 else:
-                    raise Exception(f"X login failed: {msg}. Please go to Settings → X Account and re-import your cookies.")
+                    if 'not found' in msg.lower() or 'no cookies' in msg.lower():
+                        raise Exception("No X session found. Please go to Settings → X Account and import your cookies first.")
+                    elif '401' in msg or 'unauthorized' in msg.lower() or 'expired' in msg.lower():
+                        raise Exception("X session expired or unauthorized. Please go to Settings → X Account and re-import your cookies.")
+                    elif '429' in msg or 'rate limit' in msg.lower():
+                        raise Exception("X Rate Limit reached while verifying session. Please wait 15 minutes and try again.")
+                    else:
+                        raise Exception(f"X login failed: {msg}. Please go to Settings → X Account and re-import your cookies.")
 
             urls = config['twitter'].get('list_urls', [])
             if not urls:
@@ -923,26 +950,62 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             <div class="right-col" id="auth_sec">
                 <div class="card">
                     <div class="sec-title">🔑 X Authentication</div>
-                    <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 25px;">
-                        To fetch tweets from private lists or avoid rate limits, please provide your session cookies from a logged-in X.com session.
-                    </p>
 
-                    <label>auth_token</label>
-                    <input type="password" id="s_token" placeholder="Paste auth_token">
+                    <label>Fetch Method</label>
+                    <select id="s_fetch_method" onchange="renderFetchMethod()">
+                        <option value="twikit">Browser Session (twikit — free, ToS risk)</option>
+                        <option value="api">Official X API (paid, stable)</option>
+                    </select>
+                    <span class="hint">Switch between free cookie-based scraping and the official X API v2.</span>
 
-                    <label>ct0</label>
-                    <input type="text" id="s_ct0" placeholder="Paste ct0">
+                    <div id="auth_twikit_sec" style="margin-top: 25px;">
+                        <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px;">
+                            Twikit uses cookies from a logged-in X.com session. Free, but may violate X's ToS and can break when X changes endpoints.
+                        </p>
 
-                    <div class="tip-box">
-                        <div class="tip-title">How to find these:</div>
-                        <ul class="tip-list">
-                            <li>Log in to <strong>x.com</strong> in Chrome/Edge</li>
-                            <li>Press <strong>F12</strong> > <strong>Application</strong> tab</li>
-                            <li>Under <strong>Cookies</strong>, select <strong>https://x.com</strong></li>
-                            <li>Copy values for <strong>auth_token</strong> and <strong>ct0</strong></li>
-                        </ul>
-                        <img src="screenshots/auth_guide.png" onclick="openModal(this.src)" style="width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid var(--border); cursor: zoom-in;">
-                        <div class="enlarge-hint" onclick="openModal('screenshots/auth_guide.png')">🔍 Click to enlarge image</div>
+                        <label>auth_token</label>
+                        <input type="password" id="s_token" placeholder="Paste auth_token">
+
+                        <label>ct0</label>
+                        <input type="text" id="s_ct0" placeholder="Paste ct0">
+
+                        <button class="run-btn btn-full btn-save" style="margin-top: 10px;" onclick="saveCookies()">
+                            <span>💾</span> Save Cookies
+                        </button>
+
+                        <div class="tip-box" style="margin-top: 20px;">
+                            <div class="tip-title">How to find these:</div>
+                            <ul class="tip-list">
+                                <li>Log in to <strong>x.com</strong> in Chrome/Edge</li>
+                                <li>Press <strong>F12</strong> > <strong>Application</strong> tab</li>
+                                <li>Under <strong>Cookies</strong>, select <strong>https://x.com</strong></li>
+                                <li>Copy values for <strong>auth_token</strong> and <strong>ct0</strong></li>
+                            </ul>
+                            <img src="screenshots/auth_guide.png" onclick="openModal(this.src)" style="width: 100%; border-radius: 8px; margin-top: 15px; border: 1px solid var(--border); cursor: zoom-in;">
+                            <div class="enlarge-hint" onclick="openModal('screenshots/auth_guide.png')">🔍 Click to enlarge image</div>
+                        </div>
+                    </div>
+
+                    <div id="auth_api_sec" style="display:none; margin-top: 25px;">
+                        <p style="font-size: 13px; color: var(--text-dim); line-height: 1.6; margin-bottom: 20px;">
+                            Uses the official X API v2 with an app-only Bearer Token. <strong>Public lists only.</strong>
+                            Link preview cards are not exposed by v2 (tweets still render, without rich article previews).
+                        </p>
+
+                        <label>Bearer Token</label>
+                        <input type="password" id="s_bearer" placeholder="Paste your X API Bearer Token">
+                        <span class="hint">Saved together with the other settings via <strong>Save App Configuration</strong>.</span>
+
+                        <div class="tip-box" style="margin-top: 20px;">
+                            <div class="tip-title">Setup &amp; Cost:</div>
+                            <ul class="tip-list">
+                                <li>Create a project at <a href="https://developer.x.com/en/portal/dashboard" target="_blank" style="color:var(--accent);">developer.x.com</a></li>
+                                <li>Copy the <strong>Bearer Token</strong> from your app's Keys &amp; Tokens page</li>
+                                <li><strong>Pay-per-use pricing:</strong> ~$0.001 per request (Owned Reads, Apr 2026)</li>
+                                <li>~100 tweets per request; typical list fetch costs pennies/month</li>
+                                <li>CLI helper: <a href="https://github.com/xdevplatform/xurl" target="_blank" style="color:var(--accent);">xurl</a> can generate &amp; test tokens</li>
+                            </ul>
+                        </div>
                     </div>
 
                 </div>
@@ -1113,6 +1176,9 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
                 document.getElementById('s_max').value = cfg.twitter.max_tweets;
                 document.getElementById('s_prov').value = cfg.summarization.provider;
                 document.getElementById('s_owner').value = cfg.twitter.list_owner || '';
+                document.getElementById('s_fetch_method').value = cfg.twitter.fetch_method || 'twikit';
+                document.getElementById('s_bearer').value = cfg.twitter.api_bearer_token || '';
+                renderFetchMethod();
                 renderProviderOptions();
             } catch(e) { console.error('loadConfig error:', e); }
         }
@@ -1202,8 +1268,16 @@ class DashHandler(http.server.SimpleHTTPRequestHandler):
             newCfg.summarization.options[p].model = (sel.value === 'custom') ? custom.value : sel.value;
             
             newCfg.summarization.options[p].api_key = document.getElementById('p_key').value;
+            newCfg.twitter.fetch_method = document.getElementById('s_fetch_method').value;
+            newCfg.twitter.api_bearer_token = document.getElementById('s_bearer').value;
             await fetch('/api/save-config', { method: 'POST', body: JSON.stringify(newCfg) });
             alert('Settings Saved');
+        }
+
+        function renderFetchMethod() {
+            const m = document.getElementById('s_fetch_method').value;
+            document.getElementById('auth_twikit_sec').style.display = (m === 'twikit') ? 'block' : 'none';
+            document.getElementById('auth_api_sec').style.display = (m === 'api') ? 'block' : 'none';
         }
 
         async function saveCookies() {

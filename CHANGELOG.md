@@ -2,6 +2,19 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.8.0] - 2026-04-21
+
+### Added
+- **Official X API v2 Support**: New `XApiFetcher` backend and a **Fetch Method** selector on the Settings page. Users can now switch between free Browser Session (twikit) mode and the paid Official X API (OAuth2 Bearer Token) — the latter is unaffected by X's periodic homepage changes that break scrapers. Config schema extended with `twitter.fetch_method` and `twitter.api_bearer_token`. Settings UI conditionally shows cookie fields or Bearer Token field based on selection, with inline setup guidance and cost estimate.
+- **Compact 3-Column Tweet Grid**: The "Other Relevant Tweets" section of the report now renders as a responsive grid of compact cards (3/row on desktop, 2/row on tablet, 1/row on mobile). Each card includes author, text snippet (5-line clamp), scaled-down media/link previews when available, and a trimmed metrics line. Makes large reports dramatically more scannable.
+
+### Fixed
+- **Clearer Error Messaging**: When twikit hits a rate-limit recursion trap (X 429 → twikit `_get_user_state()` → X 429 → … → `RecursionError`), the app now surfaces a useful message ("X rate-limited your session — wait ~15 min or switch to Official X API") instead of the misleading "re-import your cookies" prompt.
+- **Login Traceback Logging**: Added `traceback.format_exc()` output in the login wrapper to make future upstream twikit breakages easier to diagnose from the logs.
+
+### Notes
+- The upstream `twikit` 2.3.3 library currently has two known bugs (`Couldn't get KEY_BYTE indices`, `KeyError: 'urls'`) caused by recent X homepage changes. Community patches exist (PRs #416, #418) and can be applied to the installed package; the new **Official X API** mode bypasses these issues entirely.
+
 ## [1.7.0] - 2026-03-02
 
 ### Added

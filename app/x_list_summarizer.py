@@ -77,6 +77,8 @@ class XListFetcher:
             user = await self.client.user()
             return True, f"Logged in as @{user.screen_name}"
         except Exception as e:
+            import traceback
+            print(f"[Login Traceback]\n{traceback.format_exc()}")
             err = str(e)
             # 401 = definitively expired/invalid — hard fail
             if '401' in err:
@@ -84,6 +86,9 @@ class XListFetcher:
             # 429 = rate limited during the session check itself — hard fail
             if '429' in err or 'rate limit' in err.lower():
                 return False, f"Rate limited (429) during session check."
+            # twikit's handler recurses on 429 until stack overflow — treat as rate limit
+            if 'recursion' in err.lower():
+                return False, f"X rate-limited your session (twikit recursion trap). Wait ~15 min and retry, or switch Fetch Method to Official X API."
             # 404 = X's verify endpoint is temporarily unavailable (known X flakiness).
             # Cookies are still loaded; proceed optimistically and let the tweet
             # fetch surface a real auth error if the session is actually invalid.
@@ -655,22 +660,23 @@ class XListFetcher:
             </div>
         </div>'''
 
-        # Build individual tweets section
+        # Build individual tweets section (compact grid, 3 per row)
         individual_html = ""
         for t in aggregated['no_links'][:30]:
             tweet_url = f"https://x.com/{t['author']}/status/{t['id']}"
+            text_raw = t.get('text', '') or ''
+            text_snip = (text_raw[:220] + '…') if len(text_raw) > 220 else text_raw
+            media_html = self._build_media_html(t)
+            card_html = self._build_card_html(t)
             individual_html += f'''
-            <div class="tweet">
-                <div class="tweet-header">
-                    <a href="{tweet_url}" target="_blank" rel="noopener" class="author">@{t['author']} &#8599;</a>
-                    <div class="tweet-meta">
-                        <span class="metrics">&#10084;&#65039; {t['likes']} | &#128260; {t['retweets']} | &#128172; {t['replies']} | &#128279; {t['bookmarks']}</span>
-                        <a href="{tweet_url}" target="_blank" rel="noopener" class="view-tweet">View Tweet</a>
-                    </div>
+            <div class="tweet-mini">
+                <div class="tm-head">
+                    <a href="{tweet_url}" target="_blank" rel="noopener" class="tm-author">@{t['author']} <span class="tm-arrow">&#8599;</span></a>
                 </div>
-                <p class="tweet-text">{t['text']}</p>
-                {self._build_media_html(t)}
-                {self._build_card_html(t)}
+                <p class="tm-text">{text_snip}</p>
+                {media_html}
+                {card_html}
+                <div class="tm-metrics">&#10084;&#65039; {t['likes']} &nbsp;&#128260; {t['retweets']} &nbsp;&#128172; {t['replies']}</div>
             </div>'''
 
         ai_model_html = f'<div class="gen-model">&#129302; AI Analysis by {ai_model}</div>' if ai_model else ''
@@ -828,6 +834,39 @@ class XListFetcher:
         /* Other tweets wrapper */
         .no-links-group {{ background: var(--card); border: 1px solid var(--border); border-radius: 20px; overflow: hidden; }}
 
+        /* Compact tweet grid (Other Relevant Tweets) */
+        .tweet-grid {{ display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }}
+        @media (max-width: 860px) {{ .tweet-grid {{ grid-template-columns: repeat(2, minmax(0, 1fr)); }} }}
+        @media (max-width: 560px) {{ .tweet-grid {{ grid-template-columns: 1fr; }} }}
+        .tweet-mini {{
+            display: flex; flex-direction: column; gap: 8px;
+            background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+            padding: 14px 16px; text-decoration: none; color: var(--text);
+            transition: border-color 0.15s, transform 0.15s;
+            min-height: 120px;
+        }}
+        .tweet-mini:hover {{ border-color: var(--accent); transform: translateY(-1px); }}
+        .tm-head {{ display: flex; justify-content: space-between; align-items: center; }}
+        .tm-author {{ font-weight: 800; font-size: 13px; color: var(--text); }}
+        .tm-arrow {{ font-size: 12px; color: var(--dim); }}
+        .tweet-mini:hover .tm-author {{ color: var(--accent); }}
+        .tm-text {{ margin: 0; font-size: 13px; line-height: 1.45; color: var(--text);
+                    display: -webkit-box; -webkit-line-clamp: 5; -webkit-box-orient: vertical;
+                    overflow: hidden; white-space: pre-wrap; word-break: break-word; }}
+        .tm-metrics {{ margin-top: auto; font-size: 11px; color: var(--dim); font-weight: 500; }}
+
+        /* Scoped overrides so previews fit inside compact cards */
+        .tweet-mini .tweet-media {{ margin-top: 4px; border-radius: 10px; }}
+        .tweet-mini .tweet-media .media-item img,
+        .tweet-mini .tweet-media .media-item video {{ max-height: 180px; }}
+        .tweet-mini .tweet-card-link {{ margin-top: 4px; }}
+        .tweet-mini .tc-container {{ border-radius: 10px; }}
+        .tweet-mini .tc-img img {{ aspect-ratio: 1.91/1; max-height: 140px; }}
+        .tweet-mini .tc-title {{ font-size: 12px; }}
+        .tweet-mini .tc-desc {{ font-size: 11px; -webkit-line-clamp: 2; }}
+        .tweet-mini .tc-site {{ font-size: 10px; }}
+        .tweet-mini .tc-content {{ padding: 8px 10px; }}
+
         footer {{ text-align: center; color: var(--dim); font-size: 13px; margin-top: 100px; padding: 40px; border-top: 1px solid var(--border); }}
     </style>
 </head>
@@ -862,7 +901,7 @@ class XListFetcher:
         {insights}
 
         <h2 class="sec-label">&#128172; Other Relevant Tweets</h2>
-        <div class="no-links-group">{individual}</div>
+        <div class="tweet-grid">{individual}</div>
 
         <footer>
             Generated by X List Summarizer &bull; {timestamp}<br>
@@ -884,3 +923,238 @@ class XListFetcher:
     </script>
 </body>
 </html>'''
+
+
+class XApiFetcher(XListFetcher):
+    """Fetcher that uses the official X API v2 (Bearer Token) instead of twikit scraping.
+
+    Only public lists are supported in this mode (app-only auth). Link preview cards
+    are not exposed by v2, so the 'card' field is always None.
+    """
+
+    API_BASE = "https://api.x.com/2"
+
+    def __init__(self, bearer_token: str = '', list_owner=None):
+        super().__init__(cookies_path='browser_session/cookies.json', list_owner=list_owner)
+        self.bearer_token = (bearer_token or '').strip()
+
+    def _headers(self):
+        return {'Authorization': f'Bearer {self.bearer_token}', 'User-Agent': 'x-list-summarizer/1.0'}
+
+    async def _get(self, path: str, params: dict = None):
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.get(f"{self.API_BASE}{path}", headers=self._headers(), params=params or {})
+            if resp.status_code == 401:
+                raise Exception("401 Unauthorized — invalid or missing Bearer Token.")
+            if resp.status_code == 429:
+                raise Exception("429 Rate limit — X API quota exceeded.")
+            if resp.status_code >= 400:
+                raise Exception(f"X API error {resp.status_code}: {resp.text[:200]}")
+            return resp.json()
+
+    async def login(self):
+        if not self.bearer_token:
+            return False, "No Bearer Token configured. Please add one in Settings → X Authentication."
+        try:
+            # Minimal probe: fetch a public handle to validate the token
+            await self._get('/users/by/username/x')
+            return True, "Bearer Token OK"
+        except Exception as e:
+            return False, f"Login failed: {str(e)[:120]}"
+
+    async def verify_session(self, retries=1):
+        if not self.bearer_token:
+            return False, "No Bearer Token"
+        for attempt in range(retries + 1):
+            try:
+                await self._get('/users/by/username/x')
+                return True, "OK (API)"
+            except Exception as e:
+                err = str(e)
+                if '401' in err:
+                    return False, "Invalid Bearer Token (401)"
+                if attempt < retries:
+                    await asyncio.sleep(1)
+                    continue
+                return False, f"API: {err[:30]}"
+        return False, "Unknown"
+
+    async def get_user_memberships(self, username: str):
+        try:
+            username = username.lower().replace('@', '').strip()
+            user_resp = await self._get(f'/users/by/username/{username}')
+            user_id = user_resp.get('data', {}).get('id')
+            if not user_id:
+                return []
+
+            memberships = []
+            pagination_token = None
+            while True:
+                params = {
+                    'max_results': 100,
+                    'list.fields': 'name,owner_id',
+                    'expansions': 'owner_id',
+                    'user.fields': 'username',
+                }
+                if pagination_token:
+                    params['pagination_token'] = pagination_token
+
+                resp = await self._get(f'/users/{user_id}/list_memberships', params=params)
+                users_by_id = {u['id']: u for u in resp.get('includes', {}).get('users', [])}
+
+                for l in resp.get('data', []) or []:
+                    owner_user = users_by_id.get(l.get('owner_id'), {})
+                    memberships.append({
+                        'name': l.get('name', ''),
+                        'owner': owner_user.get('username', 'Unknown'),
+                        'id': l.get('id', ''),
+                    })
+
+                pagination_token = resp.get('meta', {}).get('next_token')
+                if not pagination_token or len(memberships) > 500:
+                    break
+
+            print(f"✅ Found {len(memberships)} memberships for {username} (API)")
+            return memberships
+        except Exception as e:
+            print(f"❌ Error fetching memberships for {username} via API: {e}")
+            return []
+
+    async def _fetch_list_metadata(self, list_id: str):
+        try:
+            resp = await self._get(f'/lists/{list_id}', params={
+                'list.fields': 'name,member_count,owner_id',
+                'expansions': 'owner_id',
+                'user.fields': 'name,username,profile_image_url',
+            })
+            data = resp.get('data', {}) or {}
+            owner = (resp.get('includes', {}).get('users') or [{}])[0]
+            return {
+                'name': data.get('name'),
+                'member_count': data.get('member_count', 0),
+                'owner_screen_name': owner.get('username'),
+                'owner_name': owner.get('name'),
+                'profile_image_url': owner.get('profile_image_url'),
+            }
+        except Exception as e:
+            print(f"⚠️ get_list via API failed for {list_id}: {e}")
+            return {}
+
+    async def fetch_list_tweets(self, list_url_or_id: str, max_tweets: int = 100, delay: float = 0):
+        if delay > 0:
+            await asyncio.sleep(delay)
+
+        list_id = self.extract_list_id(list_url_or_id)
+        print(f"📋 Fetching list {list_id} via X API...")
+
+        # 1. List metadata
+        meta = await self._fetch_list_metadata(list_id)
+        if meta.get('name'):
+            self.list_info['list_names'].append(meta['name'])
+            if self.list_info['name'] == 'X List Summary':
+                self.list_info['name'] = meta['name']
+        self.list_info['member_count'] += meta.get('member_count', 0) or 0
+
+        if self.list_owner_pref and not self.list_info['profile_image_url']:
+            try:
+                u_resp = await self._get(f"/users/by/username/{self.list_owner_pref}",
+                                         params={'user.fields': 'name,profile_image_url'})
+                u = u_resp.get('data', {}) or {}
+                self.list_info['owner'] = self.list_owner_pref
+                self.list_info['owner_name'] = u.get('name', self.list_owner_pref)
+                self.list_info['profile_image_url'] = u.get('profile_image_url')
+            except: pass
+
+        if not self.list_info['profile_image_url'] and meta.get('owner_screen_name'):
+            self.list_info['owner'] = meta['owner_screen_name']
+            self.list_info['owner_name'] = meta.get('owner_name') or meta['owner_screen_name']
+            self.list_info['profile_image_url'] = meta.get('profile_image_url')
+
+        # 2. Tweets
+        tweets = []
+        pagination_token = None
+        try:
+            while len(tweets) < max_tweets:
+                remaining = max_tweets - len(tweets)
+                params = {
+                    'max_results': min(100, max(5, remaining)),
+                    'tweet.fields': 'public_metrics,entities,attachments,author_id,created_at',
+                    'expansions': 'author_id,attachments.media_keys',
+                    'user.fields': 'username',
+                    'media.fields': 'type,url,preview_image_url,variants',
+                }
+                if pagination_token:
+                    params['pagination_token'] = pagination_token
+
+                resp = await self._get(f'/lists/{list_id}/tweets', params=params)
+                data = resp.get('data', []) or []
+                if not data: break
+
+                includes = resp.get('includes', {}) or {}
+                users_by_id = {u['id']: u for u in includes.get('users', [])}
+                media_by_key = {m['media_key']: m for m in includes.get('media', [])}
+
+                for t in data:
+                    author = users_by_id.get(t.get('author_id'), {})
+                    author_handle = author.get('username', 'unknown')
+
+                    # URLs / resolved links
+                    resolved_links = set()
+                    url_map = {}
+                    display_map = {}
+                    for u in (t.get('entities', {}).get('urls', []) or []):
+                        short = u.get('url')
+                        expanded = u.get('expanded_url') or short
+                        if short:
+                            url_map[short] = expanded
+                            display_map[short] = u.get('display_url', expanded)
+                    for expanded in url_map.values():
+                        if not any(d in expanded.lower() for d in ['x.com', 'twitter.com', 'twimg.com', 't.co']):
+                            resolved_links.add(expanded)
+
+                    # Media
+                    media = []
+                    for mk in (t.get('attachments', {}).get('media_keys', []) or []):
+                        m = media_by_key.get(mk)
+                        if not m: continue
+                        m_type = m.get('type')
+                        if m_type == 'photo':
+                            media.append({'type': 'photo', 'url': m.get('url'), 'id': mk})
+                        elif m_type in ('video', 'animated_gif'):
+                            variants = m.get('variants', []) or []
+                            best = sorted([v for v in variants if v.get('content_type') == 'video/mp4'],
+                                          key=lambda x: x.get('bit_rate', 0), reverse=True)
+                            if best:
+                                media.append({'type': m_type, 'url': best[0]['url'],
+                                              'thumbnail': m.get('preview_image_url'), 'id': mk})
+
+                    # Clean text (replace t.co with expanded/display)
+                    clean_text = t.get('text', '')
+                    for short, expanded in url_map.items():
+                        if short in clean_text:
+                            tgt = expanded if not any(d in expanded.lower() for d in ['x.com', 'twitter.com', 'twimg.com']) else display_map.get(short, short)
+                            clean_text = clean_text.replace(short, tgt)
+
+                    pm = t.get('public_metrics', {}) or {}
+                    tweets.append({
+                        'id': t.get('id'), 'text': clean_text, 'author': author_handle,
+                        'links': list(resolved_links), 'media': media, 'card': None,
+                        'likes': pm.get('like_count', 0),
+                        'retweets': pm.get('retweet_count', 0),
+                        'replies': pm.get('reply_count', 0),
+                        'quotes': pm.get('quote_count', 0),
+                        'bookmarks': pm.get('bookmark_count', 0),
+                    })
+
+                pagination_token = resp.get('meta', {}).get('next_token')
+                if not pagination_token: break
+
+            return tweets
+        except Exception as e:
+            err = str(e)
+            if '429' in err:
+                raise Exception(f"X API rate limit fetching list {list_id}. Please wait and try again.") from e
+            if '401' in err:
+                raise Exception(f"X API unauthorized (401) fetching list {list_id}. Please check your Bearer Token in Settings.") from e
+            print(f"❌ Error fetching list {list_id} via API: {err}")
+            return tweets
