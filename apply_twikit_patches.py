@@ -21,6 +21,12 @@ import sys
 from pathlib import Path
 
 
+# Patches were authored against this exact upstream version. If twikit ships
+# a newer release, skip patching to avoid clobbering fixes the maintainer may
+# have already applied. Bump this (or delete stale files in patches/twikit/)
+# when curating a new target version.
+TARGET_TWIKIT_VERSION = "2.3.3"
+
 PATCH_MAP = [
     # (source in ./patches,        destination inside twikit package)
     ("patches/twikit/user.py",                              "user.py"),
@@ -29,21 +35,31 @@ PATCH_MAP = [
 ]
 
 
-def find_twikit_root() -> Path | None:
-    """Locate the installed twikit package inside the local venv."""
+def find_twikit() -> tuple[Path | None, str | None]:
+    """Locate the installed twikit package and return (root_path, version)."""
     try:
-        import twikit  # noqa: F401
+        import twikit
     except ImportError:
-        return None
-    # twikit.__file__ points at .../site-packages/twikit/__init__.py
-    return Path(sys.modules["twikit"].__file__).parent
+        return None, None
+    root = Path(sys.modules["twikit"].__file__).parent
+    version = getattr(twikit, "__version__", None)
+    return root, version
 
 
 def main() -> int:
     root = Path(__file__).resolve().parent
-    twikit_root = find_twikit_root()
+    twikit_root, twikit_version = find_twikit()
     if twikit_root is None:
         print("[patches] twikit not installed — skipping.")
+        return 0
+
+    if twikit_version != TARGET_TWIKIT_VERSION:
+        print(
+            f"[patches] twikit version is {twikit_version!r}, "
+            f"expected {TARGET_TWIKIT_VERSION!r} — skipping to avoid clobbering "
+            "upstream fixes. Update patches/twikit/ and TARGET_TWIKIT_VERSION "
+            "in apply_twikit_patches.py if these patches are still needed."
+        )
         return 0
 
     applied, skipped = 0, 0
