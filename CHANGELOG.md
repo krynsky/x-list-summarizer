@@ -12,8 +12,8 @@ All notable changes to this project will be documented in this file.
 - **Clearer Error Messaging**: When twikit hits a rate-limit recursion trap (X 429 → twikit `_get_user_state()` → X 429 → … → `RecursionError`), the app now surfaces a useful message ("X rate-limited your session — wait ~15 min or switch to Official X API") instead of the misleading "re-import your cookies" prompt.
 - **Login Traceback Logging**: Added `traceback.format_exc()` output in the login wrapper to make future upstream twikit breakages easier to diagnose from the logs.
 
-### Notes
-- The upstream `twikit` 2.3.3 library currently has two known bugs (`Couldn't get KEY_BYTE indices`, `KeyError: 'urls'`) caused by recent X homepage changes. Community patches exist (PRs #416, #418) and can be applied to the installed package; the new **Official X API** mode bypasses these issues entirely.
+### Added (continued)
+- **Bundled twikit Patches**: Community fixes for two upstream twikit 2.3.3 bugs (`Couldn't get KEY_BYTE indices` from PR #416, `KeyError: 'urls'` from PR #418) are now vendored in `patches/twikit/` and applied automatically by `install.js` and `update.js` via the new `apply_twikit_patches.py` script. Fresh Pinokio installs pick up the fixes out of the box; no manual `pip install` from forks required. The new **Official X API** mode also bypasses these issues entirely as a stable alternative.
 
 ## [1.7.0] - 2026-03-02
 

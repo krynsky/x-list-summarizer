@@ -21,6 +21,13 @@ module.exports = {
             }
         },
         {
+            method: "shell.run",
+            params: {
+                venv: "venv",
+                message: "python apply_twikit_patches.py"
+            }
+        },
+        {
             method: "fs.write",
             params: {
                 path: "config.json",
@@ -56,7 +63,9 @@ module.exports = {
                         "max_tweets": 100,
                         "list_owner": null,
                         "max_scrolls": 5,
-                        "headless_after_auth": true
+                        "headless_after_auth": true,
+                        "fetch_method": "twikit",
+                        "api_bearer_token": ""
                     }
                 }
             }

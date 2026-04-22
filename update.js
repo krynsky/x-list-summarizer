@@ -14,6 +14,13 @@ module.exports = {
             }
         },
         {
+            method: "shell.run",
+            params: {
+                venv: "venv",
+                message: "python apply_twikit_patches.py"
+            }
+        },
+        {
             method: "notify",
             params: {
                 html: "✅ Update complete!"
